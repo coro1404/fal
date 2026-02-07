@@ -47,6 +47,8 @@ const MODEL_LABELS = {
   "flux2-pro-t2i": "Flux 2 Pro (Text-zu-Bild)",
   "gpt-image-edit": "GPT-Image 1.5 (Edit)",
   "gpt-image-mini": "GPT-Image 1 Mini (Text-zu-Bild)",
+  "grok-imagine-edit": "Grok Imagine Image (Edit)",
+  "grok-imagine-t2i": "Grok Imagine Image (Text-zu-Bild)",
   "remove-bg": "Object Removal / Background entfernen",
   "restore-photo": "Photo Restoration (historische Fotos)",
 };
@@ -138,7 +140,8 @@ function isTextToImageModel(modelKey) {
     modelKey === "nano-banana-t2i" ||
     modelKey === "gpt-image-mini" ||
     modelKey === "flux2-dev-t2i" ||
-    modelKey === "flux2-pro-t2i"
+    modelKey === "flux2-pro-t2i" ||
+    modelKey === "grok-imagine-t2i"
   );
 }
 

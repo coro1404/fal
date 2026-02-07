@@ -72,6 +72,15 @@ const MODEL_MAP = {
     endpoint: "fal-ai/gpt-image-1-mini",
     type: "generate",
   },
+  // Grok Imagine Image (xAI)
+  "grok-imagine-edit": {
+    endpoint: "xai/grok-imagine-image/edit",
+    type: "edit-grok",
+  },
+  "grok-imagine-t2i": {
+    endpoint: "xai/grok-imagine-image",
+    type: "generate",
+  },
   // Spezialisierte Tools
   "remove-bg": {
     endpoint: "fal-ai/object-removal",
@@ -113,6 +122,8 @@ const PRICING_USD = {
   "flux2-pro-t2i": 0.04,
   "gpt-image-edit": 0.05,
   "gpt-image-mini": 0.05,
+  "grok-imagine-edit": 0.022,
+  "grok-imagine-t2i": 0.02,
   "remove-bg": 0.02,
   "restore-photo": 0.02,
 };
@@ -310,6 +321,36 @@ app.post(
         });
       }
 
+      if (model.type === "edit-grok") {
+        // Grok Imagine Image Edit: ein Bild (image_url) plus Prompt.
+        const file = files[0];
+        const base64 = file.buffer.toString("base64");
+        const imageUrl = `data:${file.mimetype};base64,${base64}`;
+
+        const t0 = Date.now();
+        const result = await fal.subscribe(model.endpoint, {
+          input: {
+            prompt,
+            image_url: imageUrl,
+            num_images: 1,
+            output_format: outputFormat || "jpeg",
+          },
+          logs: false,
+        });
+        const elapsed_ms = Date.now() - t0;
+
+        const { images: raw = [], revised_prompt: revisedPrompt = "" } = result.data || {};
+        const images = await enrichImageMeta(raw);
+        const costUsd = (PRICING_USD[modelKey] ?? 0.022) * (images.length || 1);
+
+        return res.json({
+          images,
+          description: revisedPrompt || "Bearbeitung mit Grok Imagine Image.",
+          cost_estimate_usd: Math.round(costUsd * 10000) / 10000,
+          elapsed_ms,
+        });
+      }
+
       if (model.type === "edit-special-remove") {
         const file = files[0];
         const base64 = file.buffer.toString("base64");
@@ -423,6 +464,12 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
       genInput.safety_tolerance = "5";
       genInput.enable_safety_checker = false;
     }
+    if (modelKey === "grok-imagine-t2i") {
+      delete genInput.resolution;
+      const grokAspectRatios = new Set(["2:1", "20:9", "19.5:9", "16:9", "4:3", "3:2", "1:1", "2:3", "3:4", "9:16", "9:19.5", "9:20", "1:2"]);
+      if (!grokAspectRatios.has(aspect_ratio)) genInput.aspect_ratio = "1:1";
+      genInput.output_format = outputFormat || "jpeg";
+    }
 
     const t0 = Date.now();
     const result = await fal.subscribe(model.endpoint, {
@@ -431,8 +478,9 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
     });
     const elapsed_ms = Date.now() - t0;
 
-    const { images: raw = [], description = "" } = result.data || {};
+    const { images: raw = [], description: desc = "", revised_prompt: revisedPrompt = "" } = result.data || {};
     const images = await enrichImageMeta(raw);
+    const description = revisedPrompt || desc;
     const costUsd = (PRICING_USD[modelKey] ?? 0.03) * (images.length || 1);
 
     return res.json({
