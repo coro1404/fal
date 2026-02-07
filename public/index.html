@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Nano Banana Pro Image Edit</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="app-header">
+        <h1>Nano Banana Pro</h1>
+        <p class="subtitle">Einfache Bildbearbeitung, optimiert für Mobilgeräte</p>
+        <p id="fal-balance" class="fal-balance" aria-live="polite"></p>
+      </header>
+
+      <main class="app-main">
+        <section id="login-section" class="card">
+          <h2>Anmeldung</h2>
+          <p class="hint">
+            Diese Anwendung ist mit einem einfachen Passwort geschützt.
+          </p>
+          <form id="login-form" class="form">
+            <label class="field">
+              <span>Passwort</span>
+              <input
+                type="password"
+                id="password-input"
+                autocomplete="current-password"
+                required
+              />
+            </label>
+            <button type="submit" class="btn primary" id="login-button">
+              Anmelden
+            </button>
+            <p id="login-error" class="error-message" aria-live="polite"></p>
+          </form>
+        </section>
+
+        <section id="editor-section" class="card hidden">
+          <h2>Bild bearbeiten</h2>
+
+          <form id="edit-form" class="form" enctype="multipart/form-data">
+            <label class="field">
+              <span>Modell</span>
+              <select id="model-select">
+                <option value="nano-banana-edit">Nano Banana Pro (Edit)</option>
+                <option value="nano-banana-t2i">Nano Banana Pro (Text-zu-Bild)</option>
+                <option value="flux2-dev-t2i">Flux 2 [dev] (Text-zu-Bild)</option>
+                <option value="flux2-pro-t2i">Flux 2 Pro (Text-zu-Bild)</option>
+                <option value="flux2-edit">Flux 2 Turbo (Edit)</option>
+                <option value="flux2-pro-edit">Flux 2 Pro (Edit)</option>
+                <option value="flux-pro-kontext">FLUX.1 Kontext [pro] (Edit)</option>
+                <option value="gpt-image-edit">GPT-Image 1.5 (Edit)</option>
+                <option value="gpt-image-mini">GPT-Image 1 Mini (Text-zu-Bild)</option>
+                <option value="remove-bg">Objekt/Background entfernen</option>
+                <option value="restore-photo">Historische Fotos restaurieren</option>
+              </select>
+            </label>
+
+            <div id="prompt-group" class="field">
+              <label class="field">
+                <span>Prompt / Beschreibung</span>
+                <textarea
+                  id="prompt-input"
+                  rows="3"
+                  placeholder="Beschreibe, wie das Bild angepasst werden soll …"
+                ></textarea>
+              </label>
+              <div id="example-prompts-box" class="example-prompts-box">
+                <span class="example-prompts-label">Beispielprompts</span>
+                <p class="hint">Kategorie und Beispiel aus <a href="https://github.com/ZeroLu/awesome-nanobanana-pro" target="_blank" rel="noopener noreferrer">awesome-nanobanana-pro</a> wählen – das Beschreibungsfeld wird mit dem vollständigen Prompt gefüllt.</p>
+                <div class="example-prompts-row">
+                  <label class="field example-prompts-field">
+                    <span>Kategorie</span>
+                    <select id="example-category" aria-label="Beispiel-Kategorie">
+                      <option value="">— Kategorie wählen —</option>
+                    </select>
+                  </label>
+                  <label class="field example-prompts-field">
+                    <span>Beispiel</span>
+                    <select id="example-prompt" aria-label="Beispiel-Prompt">
+                      <option value="">— Beispiel wählen —</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div id="upload-group" class="field upload-group">
+              <span>Bilder hochladen (1–3)</span>
+              <p class="hint">
+                Jedes Bild in einem eigenen Feld. Mindestens Bild 1 ist nötig.
+              </p>
+              <div class="upload-slots">
+                <div class="upload-slot" data-slot="1">
+                  <label class="upload-slot-label">Bild 1</label>
+                  <input
+                    type="file"
+                    id="image-input-1"
+                    class="image-slot-input"
+                    name="images"
+                    accept="image/*"
+                  />
+                  <div class="upload-preview" id="preview-1" aria-hidden="true"></div>
+                  <button type="button" class="btn-clear-slot" data-slot="1" aria-label="Bild 1 entfernen">Entfernen</button>
+                </div>
+                <div class="upload-slot" data-slot="2">
+                  <label class="upload-slot-label">Bild 2</label>
+                  <input
+                    type="file"
+                    id="image-input-2"
+                    class="image-slot-input"
+                    name="images"
+                    accept="image/*"
+                  />
+                  <div class="upload-preview" id="preview-2" aria-hidden="true"></div>
+                  <button type="button" class="btn-clear-slot" data-slot="2" aria-label="Bild 2 entfernen">Entfernen</button>
+                </div>
+                <div class="upload-slot" data-slot="3">
+                  <label class="upload-slot-label">Bild 3</label>
+                  <input
+                    type="file"
+                    id="image-input-3"
+                    class="image-slot-input"
+                    name="images"
+                    accept="image/*"
+                  />
+                  <div class="upload-preview" id="preview-3" aria-hidden="true"></div>
+                  <button type="button" class="btn-clear-slot" data-slot="3" aria-label="Bild 3 entfernen">Entfernen</button>
+                </div>
+                <div class="selfie-slot">
+                  <span class="upload-slot-label">Selfie aufnehmen</span>
+                  <button type="button" class="btn selfie-btn" id="selfie-btn" aria-label="Kamera öffnen und Selfie aufnehmen">
+                    Selfie aufnehmen
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div id="selfie-modal" class="selfie-modal hidden" role="dialog" aria-modal="true" aria-labelledby="selfie-modal-title">
+              <div class="selfie-modal-inner">
+                <h3 id="selfie-modal-title" class="selfie-modal-title">Selfie aufnehmen</h3>
+                <video id="selfie-video" class="selfie-video" autoplay playsinline muted aria-hidden="true"></video>
+                <p id="selfie-error" class="selfie-error hidden" aria-live="polite"></p>
+                <div class="selfie-modal-actions">
+                  <button type="button" class="btn selfie-capture-btn" id="selfie-capture-btn">Foto aufnehmen</button>
+                  <button type="button" class="btn selfie-cancel-btn" id="selfie-cancel-btn">Abbrechen</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field">
+                <span>Auflösung</span>
+                <select id="resolution-select" name="resolution">
+                  <option value="1K">1K (schnell)</option>
+                  <option value="2K">2K</option>
+                  <option value="4K">4K</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Seitenverhältnis</span>
+                <select id="aspect-select" name="aspectRatio">
+                  <option value="auto">Auto</option>
+                  <option value="1:1">1:1</option>
+                  <option value="4:5">4:5</option>
+                  <option value="3:4">3:4</option>
+                  <option value="2:3">2:3</option>
+                  <option value="9:16">9:16</option>
+                  <option value="16:9">16:9</option>
+                </select>
+              </label>
+            </div>
+
+            <label class="field" id="num-images-group" aria-hidden="true">
+              <span>Anzahl Ausgaben (Text-zu-Bild)</span>
+              <input
+                type="number"
+                id="num-images-input"
+                min="1"
+                max="4"
+                value="1"
+              />
+            </label>
+
+            <button type="submit" class="btn primary" id="submit-button">
+              Bild(er) ändern/erzeugen
+            </button>
+
+            <p id="status-message" class="status-message" aria-live="polite">
+              <span id="status-text"></span>
+              <span class="status-spinner" aria-hidden="true"></span>
+            </p>
+          </form>
+        </section>
+
+        <section id="results-section" class="card hidden">
+          <h2>Ergebnis</h2>
+          <p id="result-description" class="hint"></p>
+          <p id="result-cost" class="result-cost hint" aria-live="polite"></p>
+          <div id="results-grid" class="results-grid"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="example-prompts.js"></script>
+    <script src="app.js"></script>
+  </body>
+  </html>
+

@@ -1,0 +1,18 @@
+{
+  "name": "falai-nano-banana-pro-webapp",
+  "version": "1.0.0",
+  "description": "Einfache mobile-first Web-App zur Bildbearbeitung mit fal.ai Nano Banana Pro.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "NODE_ENV=development node server.js"
+  },
+  "dependencies": {
+    "@fal-ai/client": "^1.0.0",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1"
+  }
+}
