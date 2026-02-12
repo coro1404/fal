@@ -264,6 +264,12 @@ app.post(
           editInput.image_size = "auto";
           editInput.safety_tolerance = "5";
           editInput.enable_safety_checker = false;
+        } else if (modelKey === "gpt-image-edit") {
+          // GPT-Image 1.5 Edit: eigene Parameter, kein aspect_ratio/resolution.
+          editInput.image_size = "auto";
+          editInput.background = "auto";
+          editInput.quality = "high";
+          editInput.input_fidelity = "high";
         } else {
           editInput.aspect_ratio = aspectRatio;
           editInput.resolution = resolution;
@@ -409,8 +415,13 @@ app.post(
       return res.status(400).json({ error: "Ungültiger Edit-Modus oder Modelltyp." });
     } catch (err) {
       console.error("Fehler bei /api/edit:", err);
+      const message = err?.body?.detail || err?.body?.message || err?.message;
+      const userMessage =
+        message && typeof message === "string" && message.length < 300
+          ? message
+          : "Fehler beim Aufruf der fal.ai API.";
       return res.status(500).json({
-        error: "Fehler beim Aufruf der fal.ai API.",
+        error: userMessage,
       });
     }
   }
