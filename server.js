@@ -216,6 +216,82 @@ app.get("/api/fal-balance", authMiddleware, async (req, res) => {
   }
 });
 
+/** Bild-URL aus fal.ai Request-Payload (json_output) extrahieren. */
+function extractImageUrlFromPayload(jsonOutput) {
+  if (!jsonOutput || typeof jsonOutput !== "object") return null;
+  const images = jsonOutput.images || jsonOutput.output?.images;
+  if (Array.isArray(images) && images.length) {
+    const first = images[0];
+    return first?.url ?? first?.file_url ?? first?.fileUrl ?? null;
+  }
+  const img = jsonOutput.image || jsonOutput.output?.image;
+  if (img && typeof img === "object") return img.url ?? img.file_url ?? img.fileUrl ?? null;
+  return null;
+}
+
+// Letzte Requests von fal.ai (API + Web-Playground, gleiches Konto). Pro Endpoint abfragen, zusammenführen, max. 9.
+app.get("/api/recent-requests", authMiddleware, async (req, res) => {
+  if (!FAL_KEY) {
+    return res.json([]);
+  }
+  const endpoints = [...new Set(Object.values(MODEL_MAP).map((m) => m.endpoint))];
+  const limitPerEndpoint = 15;
+  const allItems = [];
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - 7);
+
+  try {
+    await Promise.all(
+      endpoints.map(async (endpointId) => {
+        const url = new URL("https://api.fal.ai/v1/models/requests/by-endpoint");
+        url.searchParams.set("endpoint_id", endpointId);
+        url.searchParams.set("limit", String(limitPerEndpoint));
+        url.searchParams.set("status", "success");
+        url.searchParams.set("expand", "payloads");
+        url.searchParams.set("start", startDate.toISOString());
+        url.searchParams.set("end", endDate.toISOString());
+
+        const resp = await fetch(url.toString(), {
+          headers: { Authorization: `Key ${FAL_KEY}` },
+        });
+        if (!resp.ok) return;
+        const data = await resp.json().catch(() => ({}));
+        const items = data.items || [];
+        for (const it of items) {
+          const jsonOutput = it.json_output ?? (it.payloads && it.payloads.json_output);
+          const imageUrl = extractImageUrlFromPayload(jsonOutput);
+          if (imageUrl && it.request_id && it.endpoint_id) {
+            allItems.push({
+              request_id: it.request_id,
+              endpoint_id: it.endpoint_id,
+              ended_at: it.ended_at,
+              image_url: imageUrl,
+            });
+          }
+        }
+      })
+    );
+
+    allItems.sort((a, b) => {
+      const ta = a.ended_at ? new Date(a.ended_at).getTime() : 0;
+      const tb = b.ended_at ? new Date(b.ended_at).getTime() : 0;
+      return tb - ta;
+    });
+
+    const result = allItems.slice(0, 9).map(({ request_id, endpoint_id, image_url }) => ({
+      request_id,
+      endpoint_id,
+      image_url,
+    }));
+
+    return res.json(result);
+  } catch (err) {
+    console.error("Fehler bei /api/recent-requests:", err);
+    return res.json([]);
+  }
+});
+
 // Image-Edit Endpoint (1–3 Bilder)
 app.post(
   "/api/edit",
@@ -293,6 +369,8 @@ app.post(
           description,
           cost_estimate_usd: Math.round(costUsd * 10000) / 10000,
           elapsed_ms,
+          request_id: result.requestId ?? result.request_id,
+          endpoint_id: model.endpoint,
         });
       }
 
@@ -324,6 +402,8 @@ app.post(
           description: "Bearbeitung mit FLUX.1 Kontext [pro].",
           cost_estimate_usd: Math.round(costUsd * 10000) / 10000,
           elapsed_ms,
+          request_id: result.requestId ?? result.request_id,
+          endpoint_id: model.endpoint,
         });
       }
 
@@ -354,6 +434,8 @@ app.post(
           description: revisedPrompt || "Bearbeitung mit Grok Imagine Image.",
           cost_estimate_usd: Math.round(costUsd * 10000) / 10000,
           elapsed_ms,
+          request_id: result.requestId ?? result.request_id,
+          endpoint_id: model.endpoint,
         });
       }
 
@@ -382,6 +464,8 @@ app.post(
           description: "Objekte/Hintergrund entfernt.",
           cost_estimate_usd: Math.round(costUsd * 10000) / 10000,
           elapsed_ms,
+          request_id: result.requestId ?? result.request_id,
+          endpoint_id: model.endpoint,
         });
       }
 
@@ -409,6 +493,8 @@ app.post(
           description: "Historisches Foto restauriert.",
           cost_estimate_usd: Math.round(costUsd * 10000) / 10000,
           elapsed_ms,
+          request_id: result.requestId ?? result.request_id,
+          endpoint_id: model.endpoint,
         });
       }
 
@@ -499,6 +585,8 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
       description,
       cost_estimate_usd: Math.round(costUsd * 10000) / 10000,
       elapsed_ms,
+      request_id: result.requestId ?? result.request_id,
+      endpoint_id: model.endpoint,
     });
   } catch (err) {
     console.error("Fehler bei /api/generate:", err);

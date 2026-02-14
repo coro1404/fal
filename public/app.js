@@ -36,6 +36,77 @@ const selfieCancelBtn = document.getElementById("selfie-cancel-btn");
 const selfieErrorEl = document.getElementById("selfie-error");
 const exampleCategorySelect = document.getElementById("example-category");
 const examplePromptSelect = document.getElementById("example-prompt");
+const recentRequestsGrid = document.getElementById("recent-requests-grid");
+
+const FAL_RECENT_STORAGE_KEY = "fal_recent_requests";
+
+function getFalPlaygroundUrl(endpointId, requestId) {
+  const base = `https://fal.ai/models/${endpointId}/playground`;
+  return requestId ? `${base}?requestId=${encodeURIComponent(requestId)}` : base;
+}
+
+function loadRecentRequests() {
+  try {
+    return JSON.parse(localStorage.getItem(FAL_RECENT_STORAGE_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentRequests(arr) {
+  localStorage.setItem(FAL_RECENT_STORAGE_KEY, JSON.stringify(arr.slice(0, 9)));
+}
+
+function renderRecentRequestsGrid() {
+  if (!recentRequestsGrid) return;
+  const list = loadRecentRequests();
+  recentRequestsGrid.innerHTML = "";
+  for (let i = 0; i < 9; i++) {
+    const cell = document.createElement("div");
+    cell.className = "recent-request-cell" + (list[i] ? "" : " empty");
+    cell.setAttribute("aria-label", list[i] ? "Request im Playground öffnen" : "Leerer Platz");
+    if (list[i]) {
+      const a = document.createElement("a");
+      a.href = getFalPlaygroundUrl(list[i].endpoint_id, list[i].request_id);
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.title = "Request im fal.ai Playground öffnen";
+      const img = document.createElement("img");
+      img.src = list[i].image_url;
+      img.alt = "";
+      a.appendChild(img);
+      cell.appendChild(a);
+    }
+    recentRequestsGrid.appendChild(cell);
+  }
+}
+
+function pushRecentRequest(requestId, endpointId, imageUrl) {
+  if (!requestId || !endpointId || !imageUrl) return;
+  const list = loadRecentRequests();
+  list.unshift({ request_id: requestId, endpoint_id: endpointId, image_url: imageUrl });
+  saveRecentRequests(list);
+  renderRecentRequestsGrid();
+}
+
+/** Beim ersten Aufruf: letzte 9 Requests von der fal.ai API holen und 3×3-Raster damit füllen. */
+async function fetchRecentRequestsFromApi() {
+  try {
+    const res = await fetch("/api/recent-requests", { credentials: "include" });
+    if (!res.ok) return;
+    const list = await res.json();
+    if (!Array.isArray(list) || list.length === 0) return;
+    const normalized = list.slice(0, 9).map((item) => ({
+      request_id: item.request_id,
+      endpoint_id: item.endpoint_id,
+      image_url: item.image_url,
+    }));
+    saveRecentRequests(normalized);
+    renderRecentRequestsGrid();
+  } catch (_) {
+    // Fallback: Raster bleibt mit lokal gespeicherten Requests
+  }
+}
 
 const MODEL_LABELS = {
   "nano-banana-edit": "Nano Banana Pro (Edit)",
@@ -102,16 +173,21 @@ function setStatus(message, type = "") {
   if (type) statusMessage.classList.add(type);
 }
 
+const recentRequestsSection = document.getElementById("recent-requests-section");
+
 function toggleAuthUI(isAuthenticated) {
   if (isAuthenticated) {
     loginSection.classList.add("hidden");
     editorSection.classList.remove("hidden");
+    if (recentRequestsSection) recentRequestsSection.classList.remove("hidden");
     syncModeToModel();
     refreshFalBalance();
+    fetchRecentRequestsFromApi();
   } else {
     loginSection.classList.remove("hidden");
     editorSection.classList.add("hidden");
     resultsSection.classList.add("hidden");
+    if (recentRequestsSection) recentRequestsSection.classList.add("hidden");
     if (falBalanceEl) falBalanceEl.textContent = "";
   }
 }
@@ -521,6 +597,11 @@ editForm.addEventListener("submit", async (event) => {
       return;
     }
 
+    const firstImageUrl = images[0].url || images[0].file_url || images[0].fileUrl;
+    if (data.request_id && data.endpoint_id && firstImageUrl) {
+      pushRecentRequest(data.request_id, data.endpoint_id, firstImageUrl);
+    }
+
     resultsGrid.innerHTML = "";
     const elapsedSec = data.elapsed_ms != null ? data.elapsed_ms / 1000 : null;
     images.forEach((image, index) => {
@@ -587,6 +668,7 @@ function init() {
   setupExamplePrompts();
   setupUploadPreviews();
   setupSelfieCapture();
+  renderRecentRequestsGrid();
   checkAuth();
 }
 
