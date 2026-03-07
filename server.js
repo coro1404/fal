@@ -31,6 +31,13 @@ const upload = multer({
   },
 });
 
+/** Multer 2 liefert Streams; lese Stream in Buffer (für fal.ai data-URL). */
+async function streamToBuffer(stream) {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
 const MODEL_MAP = {
   // Nano Banana
   "nano-banana-edit": {
@@ -234,7 +241,12 @@ app.get("/api/recent-requests", authMiddleware, async (req, res) => {
   if (!FAL_KEY) {
     return res.json([]);
   }
-  const endpoints = [...new Set(Object.values(MODEL_MAP).map((m) => m.endpoint))];
+  const endpoints = [
+    ...new Set([
+      ...Object.values(MODEL_MAP).map((m) => m.endpoint),
+      "fal-ai/flux-lora",
+    ]),
+  ];
   const limitPerEndpoint = 15;
   const allItems = [];
   const endDate = new Date();
@@ -312,12 +324,15 @@ app.post(
         return res.status(400).json({ error: "Prompt ist erforderlich." });
       }
 
-      const files = req.files || [];
-      if (!files.length) {
+      const rawFiles = req.files || [];
+      if (!rawFiles.length) {
         return res
           .status(400)
           .json({ error: "Bitte lade mindestens ein Bild (max. 3) hoch." });
       }
+      const files = await Promise.all(
+        rawFiles.map(async (f) => ({ ...f, buffer: await streamToBuffer(f.stream) }))
+      );
 
       const model = MODEL_MAP[modelKey] || MODEL_MAP["nano-banana-edit"];
 

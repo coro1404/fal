@@ -16,7 +16,7 @@ Einfache, mobile-first Web-Anwendung, um mit Googles **Nano Banana Pro** (über 
 
 ### Voraussetzungen
 
-- Docker
+- **Node.js 24** (LTS) bzw. Docker-Image `node:24-alpine`
 - Ein gültiger `fal.ai` API-Key (`FAL_KEY`)
 
 ### Lokaler Start mit Node
