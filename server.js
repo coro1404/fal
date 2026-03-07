@@ -31,8 +31,11 @@ const upload = multer({
   },
 });
 
-/** Multer 2 liefert Streams; lese Stream in Buffer (für fal.ai data-URL). */
+/** Multer: bei MemoryStorage ist .buffer gesetzt; sonst (Multer 2 Stream) Stream in Buffer lesen. */
 async function streamToBuffer(stream) {
+  if (stream == null) {
+    throw new Error("Upload-Datei hat weder buffer noch stream (Multer-Konfiguration prüfen).");
+  }
   const chunks = [];
   for await (const chunk of stream) chunks.push(chunk);
   return Buffer.concat(chunks);
@@ -46,6 +49,15 @@ const MODEL_MAP = {
   },
   "nano-banana-t2i": {
     endpoint: "fal-ai/nano-banana-pro",
+    type: "generate",
+  },
+  // Nano Banana 2
+  "nano-banana-2-edit": {
+    endpoint: "fal-ai/nano-banana-2/edit",
+    type: "edit",
+  },
+  "nano-banana-2-t2i": {
+    endpoint: "fal-ai/nano-banana-2",
     type: "generate",
   },
   // Flux 2
@@ -122,6 +134,8 @@ async function enrichImageMeta(images) {
 const PRICING_USD = {
   "nano-banana-edit": 0.04,
   "nano-banana-t2i": 0.04,
+  "nano-banana-2-edit": 0.08,
+  "nano-banana-2-t2i": 0.08,
   "flux2-edit": 0.04,
   "flux2-pro-edit": 0.05,
    "flux-pro-kontext": 0.04,
@@ -241,6 +255,7 @@ app.get("/api/recent-requests", authMiddleware, async (req, res) => {
   if (!FAL_KEY) {
     return res.json([]);
   }
+  // Alle MODEL_MAP-Endpoints (inkl. Nano Banana Pro/2, Flux, GPT-Image, Grok, Spezial-Tools) + flux-lora
   const endpoints = [
     ...new Set([
       ...Object.values(MODEL_MAP).map((m) => m.endpoint),
@@ -331,7 +346,10 @@ app.post(
           .json({ error: "Bitte lade mindestens ein Bild (max. 3) hoch." });
       }
       const files = await Promise.all(
-        rawFiles.map(async (f) => ({ ...f, buffer: await streamToBuffer(f.stream) }))
+        rawFiles.map(async (f) => ({
+          ...f,
+          buffer: f.buffer ?? (await streamToBuffer(f.stream)),
+        }))
       );
 
       const model = MODEL_MAP[modelKey] || MODEL_MAP["nano-banana-edit"];
@@ -364,8 +382,8 @@ app.post(
         } else {
           editInput.aspect_ratio = aspectRatio;
           editInput.resolution = resolution;
-          if (modelKey === "nano-banana-edit") editInput.safety_tolerance = "6";
-          if (modelKey === "nano-banana-edit") editInput.enable_web_search = true;
+          if (modelKey === "nano-banana-edit" || modelKey === "nano-banana-2-edit") editInput.safety_tolerance = "6";
+          if (modelKey === "nano-banana-edit" || modelKey === "nano-banana-2-edit") editInput.enable_web_search = true;
           if (modelKey === "flux2-edit") editInput.enable_safety_checker = false;
         }
 
@@ -567,7 +585,7 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
       output_format: outputFormat || "png",
       num_images: Math.min(Number(numImages) || 1, 4),
     };
-    if (modelKey === "nano-banana-t2i") {
+    if (modelKey === "nano-banana-t2i" || modelKey === "nano-banana-2-t2i") {
       genInput.safety_tolerance = "6";
       genInput.enable_web_search = true;
     }

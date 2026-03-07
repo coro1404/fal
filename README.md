@@ -1,51 +1,186 @@
-## Nano Banana Pro Web-App (fal.ai)
+# fal.ai Bildbearbeitungs-Webapp
 
-Einfache, mobile-first Web-Anwendung, um mit Googles **Nano Banana Pro** (über die `fal.ai` API) Bilder zu modifizieren oder aus Text zu generieren. Die App läuft in einem einzelnen Docker-Container, ist mit einem simplen Passwort geschützt und merkt sich eingeloggte Nutzer per Cookie.
+Eine mobile-first Web-Anwendung zur **Bildbearbeitung und Text-zu-Bild-Generierung** über die [fal.ai](https://fal.ai)-API. Die App bündelt mehrere fal.ai-Modelle in einer einfachen Oberfläche: Bild-zu-Bild-Edits (1–3 Uploads), Text-zu-Bild, Objekt-/Hintergrund-Entfernung und Foto-Restaurierung. Sie läuft als Node.js-Express-Server, optional in Docker, und ist mit einem einfachen Passwort geschützt.
 
-### Features
+---
 
-- **Mobile-first UI**: Einfache, einspaltige Oberfläche für Smartphones optimiert.
-- **Modellwahl**:
-  - Bild-zu-Bild (`fal-ai/nano-banana-pro/edit`, 1–3 Upload-Bilder)
-  - Text-zu-Bild (`fal-ai/nano-banana-pro`)
-- **Upload 1–3 Bilder** zur Modifikation, Ergebnisbilder werden angezeigt und können direkt heruntergeladen werden.
-- **Passwortschutz**:
-  - Einfaches globales Passwort (`APP_PASSWORD`).
-  - Nutzer wird per Cookie erinnert (Session-Cookie bis zu 30 Tage).
-- **Docker-fähig**: Läuft als Node.js-Express-App in einem Container.
+## Inhaltsverzeichnis
 
-### Voraussetzungen
+- [Features](#features)
+- [Verwendete Modelle (fal.ai)](#verwendete-modelle-falai)
+- [Technologie-Stack und Libraries](#technologie-stack-und-libraries)
+- [Projektstruktur](#projektstruktur)
+- [Voraussetzungen](#voraussetzungen)
+- [Konfiguration](#konfiguration)
+- [Lokaler Start](#lokaler-start)
+- [Docker](#docker)
+- [API-Überblick](#api-überblick)
 
-- **Node.js 24** (LTS) bzw. Docker-Image `node:24-alpine`
-- Ein gültiger `fal.ai` API-Key (`FAL_KEY`)
+---
 
-### Lokaler Start mit Node
+## Features
+
+- **Mobile-first UI**: Einspaltiges, touch-freundliches Layout für Smartphones und Desktop.
+- **Modellauswahl**: Ein Dropdown wählt zwischen allen unterstützten Modellen (Edit, Text-zu-Bild, Spezial-Tools).
+- **Bild-zu-Bild (Edit)**:
+  - Upload von 1–3 Bildern, Prompt, optional Auflösung (1K/2K/4K) und Seitenverhältnis.
+  - Unterstützte Edit-Modelle: Nano Banana Pro, **Nano Banana 2**, Flux 2 Turbo/Pro, FLUX.1 Kontext [pro], GPT-Image 1.5, Grok Imagine Image, Objekt entfernen, Foto-Restaurierung.
+- **Text-zu-Bild**: Prompt, Seitenverhältnis, Anzahl Ausgaben (1–4); Modelle z. B. Nano Banana Pro, **Nano Banana 2**, Flux 2 [dev]/Pro, GPT-Image 1 Mini, Grok Imagine Image.
+- **Selfie-Aufnahme**: Optional Bild direkt aus der Kamera aufnehmen und in einen Upload-Slot übernehmen.
+- **Beispielprompts**: Kategorien und Beispiele aus [awesome-nanobanana-pro](https://github.com/ZeroLu/awesome-nanobanana-pro) zum Befüllen des Prompt-Feldes.
+- **Ergebnis**: Anzeige der generierten Bilder mit Auflösung/Größe/Kodierung, Download-Link (über Download-Proxy) und geschätzter Kostenhinweis.
+- **Letzte Requests (3×3-Raster)**: Die letzten 9 erfolgreichen Requests (API + fal.ai Web-Playground) werden aus der fal.ai Platform-API geladen; Klick auf ein Bild öffnet den Request im fal.ai Playground.
+- **fal.ai Verbrauch**: Anzeige des 24h-Verbrauchs in USD (wenn der API-Key entsprechende Rechte hat).
+- **Passwortschutz**: Ein globales Passwort (`APP_PASSWORD`); nach Login Session per Cookie (bis zu 30 Tage).
+
+---
+
+## Verwendete Modelle (fal.ai)
+
+Alle Aufrufe laufen über die fal.ai-API; die App nutzt folgende Endpoints (Auswahl im UI unter „Modell“).
+
+| Modell (UI) | fal.ai Endpoint | Typ | Kurzbeschreibung |
+|-------------|-----------------|-----|-------------------|
+| Nano Banana Pro (Edit) | `fal-ai/nano-banana-pro/edit` | Edit | Bild-zu-Bild mit 1–3 Bildern |
+| Nano Banana Pro (Text-zu-Bild) | `fal-ai/nano-banana-pro` | Text-zu-Bild | |
+| Nano Banana 2 (Edit) | `fal-ai/nano-banana-2/edit` | Edit | Bild-zu-Bild mit 1–3 Bildern (u. a. bis 14 Referenzbilder möglich) |
+| Nano Banana 2 (Text-zu-Bild) | `fal-ai/nano-banana-2` | Text-zu-Bild | |
+| Flux 2 Turbo (Edit) | `fal-ai/flux-2/turbo/edit` | Edit | |
+| Flux 2 Pro (Edit) | `fal-ai/flux-2-pro/edit` | Edit | |
+| FLUX.1 Kontext [pro] (Edit) | `fal-ai/flux-pro/kontext` | Edit (1 Bild) | Image-to-Image |
+| Flux 2 [dev] (Text-zu-Bild) | `fal-ai/flux-2` | Text-zu-Bild | |
+| Flux 2 Pro (Text-zu-Bild) | `fal-ai/flux-2-pro` | Text-zu-Bild | |
+| GPT-Image 1.5 (Edit) | `fal-ai/gpt-image-1.5/edit` | Edit | |
+| GPT-Image 1 Mini (Text-zu-Bild) | `fal-ai/gpt-image-1-mini` | Text-zu-Bild | |
+| Grok Imagine Image (Edit) | `xai/grok-imagine-image/edit` | Edit (1 Bild) | xAI |
+| Grok Imagine Image (Text-zu-Bild) | `xai/grok-imagine-image` | Text-zu-Bild | xAI |
+| Objekt/Background entfernen | `fal-ai/object-removal` | Spezial | 1 Bild, optionaler Prompt (z. B. „Hintergrund“) |
+| Historische Fotos restaurieren | `fal-ai/image-editing/photo-restoration` | Spezial | 1 Bild, kein Prompt |
+
+Für das **3×3-Raster „Letzte Requests“** werden zusätzlich Requests an das Modell **`fal-ai/flux-lora`** abgefragt (falls vorhanden).
+
+---
+
+## Technologie-Stack und Libraries
+
+- **Laufzeit**: Node.js **24** (LTS), siehe `engines` in `package.json`.
+- **Server**: Express (ESM), statische Dateien aus `public/`, Cookie-basierte Session, Proxy für Download und fal.ai-Aufrufe.
+
+### Abhängigkeiten (production)
+
+| Paket | Version (SemVer-Range) | Zweck |
+|-------|------------------------|--------|
+| **@fal-ai/client** | ^1.9.4 | Offizieller fal.ai JavaScript-Client; `fal.subscribe()` für synchrone Modell-Aufrufe. |
+| **cookie-parser** | ^1.4.7 | Middleware zum Auslesen von Cookies (Session-Token). |
+| **dotenv** | ^16.4.5 | Lädt Umgebungsvariablen aus `.env`. |
+| **express** | ^4.22.0 | Web-Framework, Routen, Middleware, statische Dateien. |
+| **multer** | ^2.1.1 | Multipart-Upload (Bilder); Version 2 nutzt Streams, in der App werden Streams in Buffer gelesen für data-URLs an fal.ai. |
+
+Keine weiteren Production-Abhängigkeiten. Frontend: Vanilla JS, kein Build-Step.
+
+### Node- und npm-Versionen
+
+- **Node**: `>=24.0.0` (in `package.json` unter `engines.node`).
+- **npm**: Im Docker-Build wird global `npm@11` installiert, um die „New major version“-Meldung zu vermeiden.
+
+---
+
+## Projektstruktur
+
+```
+falai/
+├── server.js           # Express-Server: Auth, /api/edit, /api/generate, /api/download, /api/recent-requests, /api/fal-balance, statische Dateien
+├── package.json        # name, scripts, engines, dependencies
+├── Dockerfile          # node:24-alpine, npm@11, production install, CMD npm start
+├── docker-compose.yml  # Service „web“, Port 3321, FAL_KEY + APP_PASSWORD
+├── README.md
+└── public/
+    ├── index.html      # SPA: Login, Editor (Modell, Prompt, Upload, Selfie, Optionen), Ergebnis, 3×3-Raster
+    ├── app.js          # Frontend-Logik: Auth, Formular, Upload-Preview, Selfie-Modal, Ergebnis-Anzeige, Raster-Befüllung
+    ├── styles.css      # Layout, Komponenten, Raster, Selfie-Modal
+    └── example-prompts.js # Kategorien/Beispiele für awesome-nanobanana-pro (geladen in index.html)
+```
+
+---
+
+## Voraussetzungen
+
+- **Node.js 24** (LTS) oder Docker mit Image `node:24-alpine`.
+- Ein gültiger **fal.ai API-Key** ([fal.ai Dashboard](https://fal.ai/dashboard)); für „Letzte Requests“ und optional „fal.ai Verbrauch“ wird die fal.ai Platform-API genutzt (gleicher Key).
+
+---
+
+## Konfiguration
+
+Umgebungsvariablen (lokal oder in Docker/docker-compose):
+
+| Variable | Pflicht | Beschreibung |
+|----------|--------|--------------|
+| **FAL_KEY** | Ja | fal.ai API-Key. Ohne Key startet der Server, aber Modell-Aufrufe schlagen fehl. |
+| **APP_PASSWORD** | Nein | Passwort für den Login; Standard: `changeme`. |
+| **PORT** | Nein | Port des Servers; Standard: `3321`. |
+| **NODE_ENV** | Nein | z. B. `production` (Docker). |
+
+Optional: `.env` im Projektroot mit `FAL_KEY=…` und `APP_PASSWORD=…`; wird von `dotenv` geladen.
+
+---
+
+## Lokaler Start
 
 ```bash
-cd /home/corona/falai
+cd /pfad/zu/falai
 
-# Umgebungsvariablen setzen
-export FAL_KEY="DEIN_FAL_KEY"
-export APP_PASSWORD="DEIN_APP_PASSWORT" # optional, Standard ist "changeme"
+# Umgebungsvariablen (oder .env)
+export FAL_KEY="dein-fal-ai-api-key"
+export APP_PASSWORD="dein-passwort"   # optional, Standard: changeme
 
 npm install
 npm start
 ```
 
-Die App läuft anschließend unter `http://localhost:3321`.
+- **Entwicklung** (ohne NODE_ENV=production):  
+  `npm run dev` (setzt `NODE_ENV=development`).
 
-### Start mit Docker
+Die App ist unter **http://localhost:3321** erreichbar (oder unter dem gewählten `PORT`).
+
+---
+
+## Docker
+
+### Build und Run (einzelner Container)
 
 ```bash
-cd /home/corona/falai
-
-docker build -t nano-banana-webapp .
+docker build -t falai-webapp .
 
 docker run -p 3321:3321 \
-  -e FAL_KEY="DEIN_FAL_KEY" \
-  -e APP_PASSWORD="DEIN_APP_PASSWORT" \
-  nano-banana-webapp
+  -e FAL_KEY="dein-fal-ai-api-key" \
+  -e APP_PASSWORD="dein-passwort" \
+  falai-webapp
 ```
 
-Danach ist die App unter `http://localhost:3321` erreichbar.
+### Docker Compose
 
+```bash
+# .env im Projektroot mit FAL_KEY und optional APP_PASSWORD
+docker compose up -d
+```
+
+In `docker-compose.yml`: Service `web`, Port `3321`, Umgebung aus `FAL_KEY` und `APP_PASSWORD` (Default `changeme`), `restart: unless-stopped`.
+
+---
+
+## API-Überblick
+
+Alle API-Routen (außer Login) erfordern eine gültige Session (Cookie nach Login).
+
+| Methode | Pfad | Beschreibung |
+|--------|------|--------------|
+| POST | `/api/login` | Login mit `password`; setzt Session-Cookie. |
+| GET | `/api/me` | Prüft, ob Session gültig ist. |
+| GET | `/api/fal-balance` | fal.ai 24h-Verbrauch in USD (wenn Key berechtigt). |
+| GET | `/api/recent-requests` | Letzte 9 erfolgreichen Requests (fal.ai Platform-API, 7 Tage, alle konfigurierten Endpoints inkl. `fal-ai/flux-lora`); Antwort: `[{ request_id, endpoint_id, image_url }]`. |
+| POST | `/api/edit` | Bild-zu-Bild: `multipart/form-data` (images, prompt, modelKey, …); ruft fal.ai Edit-Endpoints auf. |
+| POST | `/api/generate` | Text-zu-Bild: JSON (prompt, modelKey, aspectRatio, numImages, …). |
+| GET | `/api/download?url=…&filename=…` | Proxy-Download; erlaubte Hosts: `*.fal.media`, `fal.media`, `storage.googleapis.com`. |
+
+Statische Dateien werden aus `public/` ausgeliefert; unbekannte GET-Pfade liefern `index.html` (SPA-Fallback).

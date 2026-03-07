@@ -111,6 +111,8 @@ async function fetchRecentRequestsFromApi() {
 const MODEL_LABELS = {
   "nano-banana-edit": "Nano Banana Pro (Edit)",
   "nano-banana-t2i": "Nano Banana Pro (Text-zu-Bild)",
+  "nano-banana-2-edit": "Nano Banana 2 (Edit)",
+  "nano-banana-2-t2i": "Nano Banana 2 (Text-zu-Bild)",
   "flux2-edit": "Flux 2 Turbo (Edit)",
   "flux2-pro-edit": "Flux 2 Pro (Edit)",
   "flux-pro-kontext": "FLUX.1 Kontext [pro] (Edit)",
@@ -214,6 +216,7 @@ async function refreshFalBalance() {
 function isTextToImageModel(modelKey) {
   return (
     modelKey === "nano-banana-t2i" ||
+    modelKey === "nano-banana-2-t2i" ||
     modelKey === "gpt-image-mini" ||
     modelKey === "flux2-dev-t2i" ||
     modelKey === "flux2-pro-t2i" ||
