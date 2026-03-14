@@ -37,8 +37,11 @@ const selfieErrorEl = document.getElementById("selfie-error");
 const exampleCategorySelect = document.getElementById("example-category");
 const examplePromptSelect = document.getElementById("example-prompt");
 const recentRequestsGrid = document.getElementById("recent-requests-grid");
+const promptHistorySelect = document.getElementById("prompt-history-select");
 
 const FAL_RECENT_STORAGE_KEY = "fal_recent_requests";
+const PROMPT_HISTORY_STORAGE_KEY = "fal_prompt_history";
+const PROMPT_HISTORY_MAX = 25;
 
 function getFalPlaygroundUrl(endpointId, requestId) {
   const base = `https://fal.ai/models/${endpointId}/playground`;
@@ -106,6 +109,62 @@ async function fetchRecentRequestsFromApi() {
   } catch (_) {
     // Fallback: Raster bleibt mit lokal gespeicherten Requests
   }
+}
+
+/** Prompt-Historie: Laden aus localStorage. */
+function loadPromptHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(PROMPT_HISTORY_STORAGE_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+/** Prompt-Historie: Speichern (max. 25 Einträge). */
+function savePromptHistory(arr) {
+  localStorage.setItem(PROMPT_HISTORY_STORAGE_KEY, JSON.stringify(arr.slice(0, PROMPT_HISTORY_MAX)));
+}
+
+/** Prompt-Historie: Neuen Prompt hinzufügen (mit Timestamp). */
+function pushPromptHistory(promptText) {
+  if (!promptText || typeof promptText !== "string" || !promptText.trim()) return;
+  const trimmed = promptText.trim();
+  const list = loadPromptHistory().filter((item) => item.text !== trimmed);
+  list.unshift({ text: trimmed, timestamp: Date.now() });
+  savePromptHistory(list);
+  renderPromptHistorySelect();
+}
+
+/** Prompt-Historie: Auswahlbox befüllen. */
+function renderPromptHistorySelect() {
+  if (!promptHistorySelect) return;
+  const list = loadPromptHistory();
+  promptHistorySelect.innerHTML = '<option value="">— Prompt aus Historie wählen —</option>';
+  list.forEach((item, idx) => {
+    const opt = document.createElement("option");
+    opt.value = String(idx);
+    const date = new Date(item.timestamp);
+    const dateStr = date.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const timeStr = date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    const preview = item.text.length > 50 ? item.text.slice(0, 50) + "…" : item.text;
+    opt.textContent = `${dateStr} ${timeStr} – ${preview}`;
+    promptHistorySelect.appendChild(opt);
+  });
+}
+
+/** Prompt-Historie: Bei Auswahl Prompt ins Textfeld übernehmen. */
+function setupPromptHistorySelect() {
+  if (!promptHistorySelect || !promptInput) return;
+  promptHistorySelect.addEventListener("change", () => {
+    const idx = promptHistorySelect.value;
+    if (idx === "") return;
+    const list = loadPromptHistory();
+    const item = list[parseInt(idx, 10)];
+    if (item && item.text) {
+      promptInput.value = item.text;
+    }
+    promptHistorySelect.value = "";
+  });
 }
 
 const MODEL_LABELS = {
@@ -605,6 +664,8 @@ editForm.addEventListener("submit", async (event) => {
       pushRecentRequest(data.request_id, data.endpoint_id, firstImageUrl);
     }
 
+    pushPromptHistory(prompt);
+
     resultsGrid.innerHTML = "";
     const elapsedSec = data.elapsed_ms != null ? data.elapsed_ms / 1000 : null;
     images.forEach((image, index) => {
@@ -671,6 +732,8 @@ function init() {
   setupExamplePrompts();
   setupUploadPreviews();
   setupSelfieCapture();
+  setupPromptHistorySelect();
+  renderPromptHistorySelect();
   renderRecentRequestsGrid();
   checkAuth();
 }
