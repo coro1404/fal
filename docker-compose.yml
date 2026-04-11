@@ -12,5 +12,10 @@ services:
       # Einfaches App-Passwort (optional, Standard: changeme)
       APP_PASSWORD: "${APP_PASSWORD:-changeme}"
       NODE_ENV: production
+      # Muss zum Volume-Mount passen (siehe unten)
+      FAL_DATA_DIR: /app/data
+    volumes:
+      # Host-Ordner ./data → überlebt Rebuild & Neustart (sichtbar im Projektverzeichnis)
+      - ./data:/app/data
     restart: unless-stopped
 

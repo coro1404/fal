@@ -28,8 +28,9 @@ Eine mobile-first Web-Anwendung zur **Bildbearbeitung und Text-zu-Bild-Generieru
 - **Text-zu-Bild**: Prompt, Seitenverhältnis, Anzahl Ausgaben (1–4); Modelle z. B. Nano Banana Pro, **Nano Banana 2**, Flux 2 [dev]/Pro, GPT-Image 1 Mini, Grok Imagine Image.
 - **Selfie-Aufnahme**: Optional Bild direkt aus der Kamera aufnehmen und in einen Upload-Slot übernehmen.
 - **Beispielprompts**: Kategorien und Beispiele aus [awesome-nanobanana-pro](https://github.com/ZeroLu/awesome-nanobanana-pro) zum Befüllen des Prompt-Feldes.
+- **Prompt-Historie**: Die letzten 25 verwendeten Prompts werden **serverseitig** in `data/prompt-history.json` gespeichert. Session- und geräteübergreifend: gleiche Historie für alle Nutzer/Sessions; Auswahlbox mit Datum/Uhrzeit, Übernahme in das Prompt-Feld bei Auswahl. **Identische Prompts** (exakt gleicher Text nach Trim) werden nicht erneut eingetragen – bestehender Eintrag bleibt unverändert.
 - **Ergebnis**: Anzeige der generierten Bilder mit Auflösung/Größe/Kodierung, Download-Link (über Download-Proxy) und geschätzter Kostenhinweis.
-- **Letzte Requests (3×3-Raster)**: Die letzten 9 erfolgreichen Requests (API + fal.ai Web-Playground) werden aus der fal.ai Platform-API geladen; Klick auf ein Bild öffnet den Request im fal.ai Playground.
+- **Letzte Requests (3×3-Raster)**: Die letzten 9 erfolgreichen Requests (API + fal.ai Web-Playground) werden aus der fal.ai Platform-API geladen; Klick auf ein Bild öffnet den passenden fal.ai-Playground mit `requestId` und `request_id`. Wo die Plattform den Prompt nicht ins Playground übernimmt („no prompt“), liefert die App den gespeicherten Prompt aus `json_input` (falls vorhanden) und kopiert ihn beim Klick in die Zwischenablage.
 - **fal.ai Verbrauch**: Anzeige des 24h-Verbrauchs in USD (wenn der API-Key entsprechende Rechte hat).
 - **Passwortschutz**: Ein globales Passwort (`APP_PASSWORD`); nach Login Session per Cookie (bis zu 30 Tage).
 
@@ -89,14 +90,16 @@ Keine weiteren Production-Abhängigkeiten. Frontend: Vanilla JS, kein Build-Step
 
 ```
 falai/
-├── server.js           # Express-Server: Auth, /api/edit, /api/generate, /api/download, /api/recent-requests, /api/fal-balance, statische Dateien
+├── server.js           # Express-Server: Auth, /api/edit, /api/generate, /api/download, /api/recent-requests, /api/prompt-history, /api/fal-balance, statische Dateien
 ├── package.json        # name, scripts, engines, dependencies
 ├── Dockerfile          # node:24-alpine, npm@11, production install, CMD npm start
 ├── docker-compose.yml  # Service „web“, Port 3321, FAL_KEY + APP_PASSWORD
 ├── README.md
+├── data/               # Docker: ./data → /app/data; prompt-history.json (gitignored)
+│   └── .gitkeep
 └── public/
     ├── index.html      # SPA: Login, Editor (Modell, Prompt, Upload, Selfie, Optionen), Ergebnis, 3×3-Raster
-    ├── app.js          # Frontend-Logik: Auth, Formular, Upload-Preview, Selfie-Modal, Ergebnis-Anzeige, Raster-Befüllung
+    ├── app.js          # Frontend-Logik: Auth, Formular, Upload-Preview, Selfie-Modal, Ergebnis-Anzeige, Raster, Prompt-Historie
     ├── styles.css      # Layout, Komponenten, Raster, Selfie-Modal
     └── example-prompts.js # Kategorien/Beispiele für awesome-nanobanana-pro (geladen in index.html)
 ```
@@ -120,6 +123,7 @@ Umgebungsvariablen (lokal oder in Docker/docker-compose):
 | **APP_PASSWORD** | Nein | Passwort für den Login; Standard: `changeme`. |
 | **PORT** | Nein | Port des Servers; Standard: `3321`. |
 | **NODE_ENV** | Nein | z. B. `production` (Docker). |
+| **FAL_DATA_DIR** | Nein | Verzeichnis für `prompt-history.json` (Docker: z. B. `/app/data` bei Volume `./data:/app/data`). Standard: `data/` neben `server.js`. |
 
 Optional: `.env` im Projektroot mit `FAL_KEY=…` und `APP_PASSWORD=…`; wird von `dotenv` geladen.
 
@@ -153,10 +157,14 @@ Die App ist unter **http://localhost:3321** erreichbar (oder unter dem gewählte
 docker build -t falai-webapp .
 
 docker run -p 3321:3321 \
+  -v "$(pwd)/data:/app/data" \
+  -e FAL_DATA_DIR=/app/data \
   -e FAL_KEY="dein-fal-ai-api-key" \
   -e APP_PASSWORD="dein-passwort" \
   falai-webapp
 ```
+
+Der Ordner **`./data` auf dem Host** (gebunden nach `/app/data`) enthält `prompt-history.json` und bleibt über Container-Neustarts und Rebuilds erhalten. Ohne Volume und ohne `FAL_DATA_DIR` auf dauerhaftem Speicher geht die Historie bei einem neuen Container verloren.
 
 ### Docker Compose
 
@@ -165,7 +173,7 @@ docker run -p 3321:3321 \
 docker compose up -d
 ```
 
-In `docker-compose.yml`: Service `web`, Port `3321`, Umgebung aus `FAL_KEY` und `APP_PASSWORD` (Default `changeme`), `restart: unless-stopped`.
+In `docker-compose.yml`: Service `web`, Port `3321`, **`./data:/app/data`** (Bind-Mount im Projektordner) und **`FAL_DATA_DIR=/app/data`**, damit `prompt-history.json` auf dem Host liegt und nach Neustart/Rebuild erhalten bleibt. **Hinweis:** `docker compose down -v` entfernt nur benannte Volumes – bei Bind-Mount `./data` bleibt der Ordner auf der Platte. Wechselt der Compose-Projektname (`COMPOSE_PROJECT_NAME`) bei benannten Volumes, wirkt eine „leere“ Historie oft wie Datenverlust (neues Volume).
 
 ---
 
@@ -177,6 +185,8 @@ Alle API-Routen (außer Login) erfordern eine gültige Session (Cookie nach Logi
 |--------|------|--------------|
 | POST | `/api/login` | Login mit `password`; setzt Session-Cookie. |
 | GET | `/api/me` | Prüft, ob Session gültig ist. |
+| GET | `/api/prompt-history` | Liefert die serverseitige Prompt-Historie: `{ items: [ { text, timestamp }, … ] }` (max. 25). |
+| POST | `/api/prompt-history` | Speichert einen neuen Prompt (Body: `{ text: "…" }`), sofern derselbe Text noch nicht in der Historie steht; sonst unveränderte Liste ohne erneutes Schreiben. |
 | GET | `/api/fal-balance` | fal.ai 24h-Verbrauch in USD (wenn Key berechtigt). |
 | GET | `/api/recent-requests` | Letzte 9 erfolgreichen Requests (fal.ai Platform-API, 7 Tage, alle konfigurierten Endpoints inkl. `fal-ai/flux-lora`); Antwort: `[{ request_id, endpoint_id, image_url }]`. |
 | POST | `/api/edit` | Bild-zu-Bild: `multipart/form-data` (images, prompt, modelKey, …); ruft fal.ai Edit-Endpoints auf. |

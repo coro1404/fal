@@ -40,12 +40,28 @@ const recentRequestsGrid = document.getElementById("recent-requests-grid");
 const promptHistorySelect = document.getElementById("prompt-history-select");
 
 const FAL_RECENT_STORAGE_KEY = "fal_recent_requests";
-const PROMPT_HISTORY_STORAGE_KEY = "fal_prompt_history";
-const PROMPT_HISTORY_MAX = 25;
 
 function getFalPlaygroundUrl(endpointId, requestId) {
   const base = `https://fal.ai/models/${endpointId}/playground`;
-  return requestId ? `${base}?requestId=${encodeURIComponent(requestId)}` : base;
+  if (!requestId) return base;
+  const q = new URLSearchParams();
+  q.set("requestId", requestId);
+  q.set("request_id", requestId);
+  return `${base}?${q.toString()}`;
+}
+
+/** Kurzer Hinweis nach Klick auf 3×3-Zelle (Playground + Zwischenablage). */
+function showPlaygroundPromptToast(message) {
+  const el = document.createElement("div");
+  el.className = "playground-toast";
+  el.setAttribute("role", "status");
+  el.textContent = message;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("playground-toast-visible"));
+  setTimeout(() => {
+    el.classList.remove("playground-toast-visible");
+    setTimeout(() => el.remove(), 300);
+  }, 4200);
 }
 
 function loadRecentRequests() {
@@ -69,13 +85,29 @@ function renderRecentRequestsGrid() {
     cell.className = "recent-request-cell" + (list[i] ? "" : " empty");
     cell.setAttribute("aria-label", list[i] ? "Request im Playground öffnen" : "Leerer Platz");
     if (list[i]) {
+      const entry = list[i];
       const a = document.createElement("a");
-      a.href = getFalPlaygroundUrl(list[i].endpoint_id, list[i].request_id);
+      a.href = getFalPlaygroundUrl(entry.endpoint_id, entry.request_id);
       a.target = "_blank";
       a.rel = "noopener noreferrer";
-      a.title = "Request im fal.ai Playground öffnen";
+      a.title = entry.prompt
+        ? `Playground öffnen · Prompt (Vorschau): ${entry.prompt.slice(0, 200)}${entry.prompt.length > 200 ? "…" : ""}`
+        : "Request im fal.ai Playground öffnen (Prompt ggf. nicht von fal.ai übernommen)";
+      a.addEventListener("click", () => {
+        const p = entry.prompt;
+        if (p && navigator.clipboard?.writeText) {
+          void navigator.clipboard.writeText(p);
+          showPlaygroundPromptToast(
+            "Prompt in die Zwischenablage kopiert. Im Playground-Fenster ins Prompt-Feld einfügen (Strg+V)."
+          );
+        } else if (!p) {
+          showPlaygroundPromptToast(
+            "Playground öffnet sich. Wenn kein Prompt erscheint: fal.ai übernimmt Eingaben bei manchen Requests nicht – Prompt ggf. aus der App-Historie holen."
+          );
+        }
+      });
       const img = document.createElement("img");
-      img.src = list[i].image_url;
+      img.src = entry.image_url;
       img.alt = "";
       a.appendChild(img);
       cell.appendChild(a);
@@ -84,10 +116,12 @@ function renderRecentRequestsGrid() {
   }
 }
 
-function pushRecentRequest(requestId, endpointId, imageUrl) {
+function pushRecentRequest(requestId, endpointId, imageUrl, promptText) {
   if (!requestId || !endpointId || !imageUrl) return;
   const list = loadRecentRequests();
-  list.unshift({ request_id: requestId, endpoint_id: endpointId, image_url: imageUrl });
+  const prompt =
+    typeof promptText === "string" && promptText.trim() ? promptText.trim() : null;
+  list.unshift({ request_id: requestId, endpoint_id: endpointId, image_url: imageUrl, prompt });
   saveRecentRequests(list);
   renderRecentRequestsGrid();
 }
@@ -103,6 +137,7 @@ async function fetchRecentRequestsFromApi() {
       request_id: item.request_id,
       endpoint_id: item.endpoint_id,
       image_url: item.image_url,
+      prompt: typeof item.prompt === "string" && item.prompt.trim() ? item.prompt.trim() : null,
     }));
     saveRecentRequests(normalized);
     renderRecentRequestsGrid();
@@ -111,36 +146,26 @@ async function fetchRecentRequestsFromApi() {
   }
 }
 
-/** Prompt-Historie: Laden aus localStorage. */
-function loadPromptHistory() {
+/** Prompt-Historie: Von Server laden (session- und geräteübergreifend). */
+async function fetchPromptHistory() {
   try {
-    return JSON.parse(localStorage.getItem(PROMPT_HISTORY_STORAGE_KEY) || "[]");
+    const res = await fetch("/api/prompt-history", { credentials: "include" });
+    const data = await res.json().catch(() => ({}));
+    return Array.isArray(data.items) ? data.items : [];
   } catch {
     return [];
   }
 }
 
-/** Prompt-Historie: Speichern (max. 25 Einträge). */
-function savePromptHistory(arr) {
-  localStorage.setItem(PROMPT_HISTORY_STORAGE_KEY, JSON.stringify(arr.slice(0, PROMPT_HISTORY_MAX)));
-}
+/** Prompt-Historie: Aktuelle Liste (für Auswahl beim change). */
+let promptHistoryList = [];
 
-/** Prompt-Historie: Neuen Prompt hinzufügen (mit Timestamp). */
-function pushPromptHistory(promptText) {
-  if (!promptText || typeof promptText !== "string" || !promptText.trim()) return;
-  const trimmed = promptText.trim();
-  const list = loadPromptHistory().filter((item) => item.text !== trimmed);
-  list.unshift({ text: trimmed, timestamp: Date.now() });
-  savePromptHistory(list);
-  renderPromptHistorySelect();
-}
-
-/** Prompt-Historie: Auswahlbox befüllen. */
-function renderPromptHistorySelect() {
+/** Prompt-Historie: Auswahlbox befüllen und Liste für Übernahme merken. */
+function renderPromptHistorySelect(list) {
+  promptHistoryList = list || [];
   if (!promptHistorySelect) return;
-  const list = loadPromptHistory();
   promptHistorySelect.innerHTML = '<option value="">— Prompt aus Historie wählen —</option>';
-  list.forEach((item, idx) => {
+  promptHistoryList.forEach((item, idx) => {
     const opt = document.createElement("option");
     opt.value = String(idx);
     const date = new Date(item.timestamp);
@@ -152,14 +177,39 @@ function renderPromptHistorySelect() {
   });
 }
 
+/** Prompt-Historie: Vom Server holen und Auswahlbox aktualisieren. */
+async function fetchPromptHistoryAndRender() {
+  const list = await fetchPromptHistory();
+  renderPromptHistorySelect(list);
+}
+
+/** Prompt-Historie: Neuen Prompt serverseitig speichern, danach Liste neu laden. */
+async function pushPromptHistory(promptText) {
+  if (!promptText || typeof promptText !== "string" || !promptText.trim()) return;
+  const trimmed = promptText.trim();
+  if (promptHistoryList.some((item) => item.text === trimmed)) return;
+  try {
+    const res = await fetch("/api/prompt-history", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: trimmed }),
+    });
+    const data = await res.json().catch(() => ({}));
+    const list = Array.isArray(data.items) ? data.items : await fetchPromptHistory();
+    renderPromptHistorySelect(list);
+  } catch (_) {
+    renderPromptHistorySelect(await fetchPromptHistory());
+  }
+}
+
 /** Prompt-Historie: Bei Auswahl Prompt ins Textfeld übernehmen. */
 function setupPromptHistorySelect() {
   if (!promptHistorySelect || !promptInput) return;
   promptHistorySelect.addEventListener("change", () => {
     const idx = promptHistorySelect.value;
     if (idx === "") return;
-    const list = loadPromptHistory();
-    const item = list[parseInt(idx, 10)];
+    const item = promptHistoryList[parseInt(idx, 10)];
     if (item && item.text) {
       promptInput.value = item.text;
     }
@@ -244,6 +294,7 @@ function toggleAuthUI(isAuthenticated) {
     syncModeToModel();
     refreshFalBalance();
     fetchRecentRequestsFromApi();
+    fetchPromptHistoryAndRender();
   } else {
     loginSection.classList.remove("hidden");
     editorSection.classList.add("hidden");
@@ -661,7 +712,7 @@ editForm.addEventListener("submit", async (event) => {
 
     const firstImageUrl = images[0].url || images[0].file_url || images[0].fileUrl;
     if (data.request_id && data.endpoint_id && firstImageUrl) {
-      pushRecentRequest(data.request_id, data.endpoint_id, firstImageUrl);
+      pushRecentRequest(data.request_id, data.endpoint_id, firstImageUrl, prompt);
     }
 
     pushPromptHistory(prompt);
@@ -733,7 +784,6 @@ function init() {
   setupUploadPreviews();
   setupSelfieCapture();
   setupPromptHistorySelect();
-  renderPromptHistorySelect();
   renderRecentRequestsGrid();
   checkAuth();
 }

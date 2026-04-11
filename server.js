@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import cookieParser from "cookie-parser";
 import { Readable } from "stream";
+import { readFile, writeFile, mkdir } from "fs/promises";
 import { fal } from "@fal-ai/client";
 import crypto from "crypto";
 import path from "path";
@@ -156,6 +157,31 @@ const SESSION_COOKIE_NAME = "fal_session";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const PROMPT_HISTORY_MAX = 25;
+/** Persistente Daten (Docker: Volume nach /app/data mounten, siehe FAL_DATA_DIR). */
+const PROMPT_DATA_DIR = process.env.FAL_DATA_DIR
+  ? path.resolve(process.env.FAL_DATA_DIR)
+  : path.join(__dirname, "data");
+const PROMPT_HISTORY_FILE = path.join(PROMPT_DATA_DIR, "prompt-history.json");
+
+async function readPromptHistoryFile() {
+  try {
+    const raw = await readFile(PROMPT_HISTORY_FILE, "utf8");
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (err) {
+    if (err?.code === "ENOENT") return [];
+    console.error("Fehler beim Lesen der Prompt-Historie:", err);
+    return [];
+  }
+}
+
+async function writePromptHistoryFile(arr) {
+  const dir = path.dirname(PROMPT_HISTORY_FILE);
+  await mkdir(dir, { recursive: true });
+  await writeFile(PROMPT_HISTORY_FILE, JSON.stringify(arr, null, 0), "utf8");
+}
+
 app.use(cookieParser());
 app.use(express.json());
 
@@ -199,6 +225,39 @@ app.get("/api/me", (req, res) => {
     return res.json({ authenticated: true });
   }
   return res.json({ authenticated: false });
+});
+
+// Prompt-Historie: serverseitig persistent (Datei), session- und geräteübergreifend
+app.get("/api/prompt-history", authMiddleware, async (req, res) => {
+  try {
+    const items = await readPromptHistoryFile();
+    return res.json({ items });
+  } catch (err) {
+    console.error("Fehler bei GET /api/prompt-history:", err);
+    return res.status(500).json({ error: "Historie konnte nicht geladen werden.", items: [] });
+  }
+});
+
+app.post("/api/prompt-history", authMiddleware, async (req, res) => {
+  try {
+    const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+    if (!text) {
+      return res.status(400).json({ error: "Prompt-Text fehlt.", items: [] });
+    }
+    const list = await readPromptHistoryFile();
+    const alreadyThere = list.some((item) => item.text === text);
+    if (alreadyThere) {
+      return res.json({ items: list });
+    }
+    const filtered = list.filter((item) => item.text !== text);
+    filtered.unshift({ text, timestamp: Date.now() });
+    const kept = filtered.slice(0, PROMPT_HISTORY_MAX);
+    await writePromptHistoryFile(kept);
+    return res.json({ items: kept });
+  } catch (err) {
+    console.error("Fehler bei POST /api/prompt-history:", err);
+    return res.status(500).json({ error: "Historie konnte nicht gespeichert werden.", items: [] });
+  }
 });
 
 // fal.ai Usage/Balance: 24h-Verbrauch aus Platform API (erfordert Admin-Key)
@@ -250,6 +309,29 @@ function extractImageUrlFromPayload(jsonOutput) {
   return null;
 }
 
+/** Prompt aus Request-Eingabe (json_input) extrahieren (Platform-API mit expand=payloads). */
+function extractPromptFromPayload(jsonInput) {
+  if (!jsonInput || typeof jsonInput !== "object") return null;
+  const take = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  let p = take(jsonInput.prompt);
+  if (p) return p;
+  p = take(jsonInput.text);
+  if (p) return p;
+  p = take(jsonInput.description);
+  if (p) return p;
+  const inner = jsonInput.input;
+  if (inner && typeof inner === "object") {
+    p = take(inner.prompt) || take(inner.text);
+    if (p) return p;
+  }
+  const args = jsonInput.arguments;
+  if (args && typeof args === "object") {
+    p = take(args.prompt) || take(args.text);
+    if (p) return p;
+  }
+  return null;
+}
+
 // Letzte Requests von fal.ai (API + Web-Playground, gleiches Konto). Pro Endpoint abfragen, zusammenführen, max. 9.
 app.get("/api/recent-requests", authMiddleware, async (req, res) => {
   if (!FAL_KEY) {
@@ -287,6 +369,7 @@ app.get("/api/recent-requests", authMiddleware, async (req, res) => {
         const items = data.items || [];
         for (const it of items) {
           const jsonOutput = it.json_output ?? (it.payloads && it.payloads.json_output);
+          const jsonInput = it.json_input ?? (it.payloads && it.payloads.json_input);
           const imageUrl = extractImageUrlFromPayload(jsonOutput);
           if (imageUrl && it.request_id && it.endpoint_id) {
             allItems.push({
@@ -294,6 +377,7 @@ app.get("/api/recent-requests", authMiddleware, async (req, res) => {
               endpoint_id: it.endpoint_id,
               ended_at: it.ended_at,
               image_url: imageUrl,
+              prompt: extractPromptFromPayload(jsonInput),
             });
           }
         }
@@ -306,10 +390,11 @@ app.get("/api/recent-requests", authMiddleware, async (req, res) => {
       return tb - ta;
     });
 
-    const result = allItems.slice(0, 9).map(({ request_id, endpoint_id, image_url }) => ({
+    const result = allItems.slice(0, 9).map(({ request_id, endpoint_id, image_url, prompt }) => ({
       request_id,
       endpoint_id,
       image_url,
+      prompt: prompt || null,
     }));
 
     return res.json(result);

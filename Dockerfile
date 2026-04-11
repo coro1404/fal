@@ -2,6 +2,10 @@ FROM node:24-alpine
 
 WORKDIR /app
 
+RUN mkdir -p /app/data
+
+ENV FAL_DATA_DIR=/app/data
+
 RUN npm install -g npm@11
 
 COPY package.json ./
