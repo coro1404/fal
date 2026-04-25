@@ -74,12 +74,12 @@ Beim **Sync** mit fal.ai werden alle konfigurierten Endpoints inkl. **`fal-ai/fl
 
 | Paket | Version (SemVer-Range) | Zweck |
 |-------|------------------------|--------|
-| **@fal-ai/client** | ^1.9.4 | Offizieller fal.ai JavaScript-Client; `fal.subscribe()` für synchrone Modell-Aufrufe. |
+| **@fal-ai/client** | ^1.10.0 | Offizieller fal.ai JavaScript-Client; `fal.subscribe()` für synchrone Modell-Aufrufe. |
 | **cookie-parser** | ^1.4.7 | Middleware zum Auslesen von Cookies (Session-Token). |
-| **dotenv** | ^16.4.5 | Lädt Umgebungsvariablen aus `.env`. |
+| **dotenv** | ^17.4.2 | Lädt Umgebungsvariablen aus `.env`. |
 | **express** | ^4.22.0 | Web-Framework, Routen, Middleware, statische Dateien. |
 | **multer** | ^2.1.1 | Multipart-Upload (Bilder); Version 2 nutzt Streams, in der App werden Streams in Buffer gelesen für data-URLs an fal.ai. |
-| **sharp** | ^0.33.x | Skaliert Ergebnisbilder zu WebP-Thumbnails für das 3×3-Raster (lokal persistent). |
+| **sharp** | ^0.34.5 | Skaliert Ergebnisbilder zu WebP-Thumbnails für das 3×3-Raster (lokal persistent). |
 
 Frontend: Vanilla JS, kein Build-Step.
 
