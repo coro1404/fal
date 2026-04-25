@@ -58,6 +58,8 @@
                 <option value="flux-pro-kontext">FLUX.1 Kontext [pro] (Edit)</option>
                 <option value="gpt-image-edit">GPT-Image 1.5 (Edit)</option>
                 <option value="gpt-image-mini">GPT-Image 1 Mini (Text-zu-Bild)</option>
+                <option value="gpt-image-2-edit">GPT-Image 2 (Edit)</option>
+                <option value="gpt-image-2-t2i">GPT-Image 2 (Text-zu-Bild)</option>
                 <option value="grok-imagine-edit">Grok Imagine Image (Edit)</option>
                 <option value="grok-imagine-t2i">Grok Imagine Image (Text-zu-Bild)</option>
                 <option value="remove-bg">Objekt/Background entfernen</option>
@@ -81,24 +83,6 @@
                     <option value="">— Prompt aus Historie wählen —</option>
                   </select>
                 </label>
-              </div>
-              <div id="example-prompts-box" class="example-prompts-box">
-                <span class="example-prompts-label">Beispielprompts</span>
-                <p class="hint">Kategorie und Beispiel aus <a href="https://github.com/ZeroLu/awesome-nanobanana-pro" target="_blank" rel="noopener noreferrer">awesome-nanobanana-pro</a> wählen – das Beschreibungsfeld wird mit dem vollständigen Prompt gefüllt.</p>
-                <div class="example-prompts-row">
-                  <label class="field example-prompts-field">
-                    <span>Kategorie</span>
-                    <select id="example-category" aria-label="Beispiel-Kategorie">
-                      <option value="">— Kategorie wählen —</option>
-                    </select>
-                  </label>
-                  <label class="field example-prompts-field">
-                    <span>Beispiel</span>
-                    <select id="example-prompt" aria-label="Beispiel-Prompt">
-                      <option value="">— Beispiel wählen —</option>
-                    </select>
-                  </label>
-                </div>
               </div>
             </div>
 
@@ -150,6 +134,11 @@
                     Selfie aufnehmen
                   </button>
                 </div>
+              </div>
+              <div id="recent-uploads-box" class="recent-uploads-box">
+                <span class="upload-slot-label">Letzte Uploads</span>
+                <p class="hint">Die letzten 3 hochgeladenen Bilder bleiben gespeichert. Antippen, um sie in den nächsten freien Bild-Slot zu übernehmen.</p>
+                <div id="recent-uploads-grid" class="recent-uploads-grid" aria-label="Letzte hochgeladene Bilder"></div>
               </div>
             </div>
 
@@ -220,13 +209,12 @@
 
         <section id="recent-requests-section" class="card hidden">
           <h2>Letzte Requests (fal.ai)</h2>
-          <p class="hint">Letzte 9 Requests (API und Web-Playground). Klick öffnet im fal.ai Playground.</p>
+          <p class="hint">Letzte 9 Requests über alle Modelle, serverseitig gespeichert (bleibt nach Neustart). Klick öffnet den fal.ai Playground.</p>
           <div id="recent-requests-grid" class="recent-requests-grid" aria-label="Raster der letzten 9 fal.ai Requests"></div>
         </section>
       </main>
     </div>
 
-    <script src="example-prompts.js"></script>
     <script src="app.js"></script>
   </body>
   </html>

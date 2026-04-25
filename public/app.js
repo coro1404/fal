@@ -34,12 +34,9 @@ const selfieVideo = document.getElementById("selfie-video");
 const selfieCaptureBtn = document.getElementById("selfie-capture-btn");
 const selfieCancelBtn = document.getElementById("selfie-cancel-btn");
 const selfieErrorEl = document.getElementById("selfie-error");
-const exampleCategorySelect = document.getElementById("example-category");
-const examplePromptSelect = document.getElementById("example-prompt");
 const recentRequestsGrid = document.getElementById("recent-requests-grid");
 const promptHistorySelect = document.getElementById("prompt-history-select");
-
-const FAL_RECENT_STORAGE_KEY = "fal_recent_requests";
+const recentUploadsGrid = document.getElementById("recent-uploads-grid");
 
 function getFalPlaygroundUrl(endpointId, requestId) {
   const base = `https://fal.ai/models/${endpointId}/playground`;
@@ -64,28 +61,21 @@ function showPlaygroundPromptToast(message) {
   }, 4200);
 }
 
-function loadRecentRequests() {
-  try {
-    return JSON.parse(localStorage.getItem(FAL_RECENT_STORAGE_KEY) || "[]");
-  } catch {
-    return [];
-  }
-}
+/** Aktuelle 3×3-Einträge (vom Server), für Klick-Handler / Playground. */
+let recentRequestsList = [];
+let recentUploadedImages = [];
 
-function saveRecentRequests(arr) {
-  localStorage.setItem(FAL_RECENT_STORAGE_KEY, JSON.stringify(arr.slice(0, 9)));
-}
-
-function renderRecentRequestsGrid() {
+function renderRecentRequestsGrid(list) {
+  if (Array.isArray(list)) recentRequestsList = list;
   if (!recentRequestsGrid) return;
-  const list = loadRecentRequests();
+  const display = recentRequestsList;
   recentRequestsGrid.innerHTML = "";
   for (let i = 0; i < 9; i++) {
     const cell = document.createElement("div");
-    cell.className = "recent-request-cell" + (list[i] ? "" : " empty");
-    cell.setAttribute("aria-label", list[i] ? "Request im Playground öffnen" : "Leerer Platz");
-    if (list[i]) {
-      const entry = list[i];
+    cell.className = "recent-request-cell" + (display[i] ? "" : " empty");
+    cell.setAttribute("aria-label", display[i] ? "Request im Playground öffnen" : "Leerer Platz");
+    if (display[i]) {
+      const entry = display[i];
       const a = document.createElement("a");
       a.href = getFalPlaygroundUrl(entry.endpoint_id, entry.request_id);
       a.target = "_blank";
@@ -107,8 +97,19 @@ function renderRecentRequestsGrid() {
         }
       });
       const img = document.createElement("img");
-      img.src = entry.image_url;
+      const thumb = entry.thumb_url;
+      const full = entry.image_url;
+      img.src = thumb || full;
       img.alt = "";
+      if (thumb) {
+        let thumbFailed = false;
+        img.addEventListener("error", function onThumbErr() {
+          if (thumbFailed) return;
+          thumbFailed = true;
+          img.removeEventListener("error", onThumbErr);
+          img.src = full;
+        });
+      }
       a.appendChild(img);
       cell.appendChild(a);
     }
@@ -116,34 +117,153 @@ function renderRecentRequestsGrid() {
   }
 }
 
-function pushRecentRequest(requestId, endpointId, imageUrl, promptText) {
-  if (!requestId || !endpointId || !imageUrl) return;
-  const list = loadRecentRequests();
-  const prompt =
-    typeof promptText === "string" && promptText.trim() ? promptText.trim() : null;
-  list.unshift({ request_id: requestId, endpoint_id: endpointId, image_url: imageUrl, prompt });
-  saveRecentRequests(list);
-  renderRecentRequestsGrid();
-}
-
-/** Beim ersten Aufruf: letzte 9 Requests von der fal.ai API holen und 3×3-Raster damit füllen. */
-async function fetchRecentRequestsFromApi() {
+async function loadRecentRequestsFromServer() {
   try {
     const res = await fetch("/api/recent-requests", { credentials: "include" });
-    if (!res.ok) return;
+    if (!res.ok) return [];
     const list = await res.json();
-    if (!Array.isArray(list) || list.length === 0) return;
-    const normalized = list.slice(0, 9).map((item) => ({
+    if (!Array.isArray(list)) return [];
+    return list.map((item) => ({
       request_id: item.request_id,
       endpoint_id: item.endpoint_id,
       image_url: item.image_url,
+      thumb_url:
+        typeof item.thumb_url === "string" && item.thumb_url.trim()
+          ? item.thumb_url.trim()
+          : `/api/recent-thumbnails/${encodeURIComponent(item.request_id)}`,
       prompt: typeof item.prompt === "string" && item.prompt.trim() ? item.prompt.trim() : null,
     }));
-    saveRecentRequests(normalized);
-    renderRecentRequestsGrid();
-  } catch (_) {
-    // Fallback: Raster bleibt mit lokal gespeicherten Requests
+  } catch {
+    return [];
   }
+}
+
+async function refreshRecentRequestsGrid() {
+  const list = await loadRecentRequestsFromServer();
+  renderRecentRequestsGrid(list);
+}
+
+async function loadRecentUploadsFromServer() {
+  try {
+    const res = await fetch("/api/recent-uploaded-images", { credentials: "include" });
+    if (!res.ok) return [];
+    const list = await res.json();
+    if (!Array.isArray(list)) return [];
+    return list;
+  } catch {
+    return [];
+  }
+}
+
+function getFirstTargetSlot() {
+  const empty = getFirstEmptySlot();
+  if (empty >= 0) return empty;
+  return 0;
+}
+
+async function putImageInSlotFromRecent(slotIndex, imageMeta) {
+  if (!imageMeta?.image_url || !imageInputs[slotIndex]) return false;
+  const res = await fetch(imageMeta.image_url, { credentials: "include" });
+  if (!res.ok) return false;
+  const blob = await res.blob();
+  const ext = blob.type?.split("/")[1] || "png";
+  const file = new File([blob], `recent-upload-${imageMeta.id}.${ext}`, { type: blob.type || "image/png" });
+  setSlotFile(slotIndex, file);
+  return true;
+}
+
+function renderRecentUploadsGrid(list) {
+  recentUploadedImages = Array.isArray(list) ? list : [];
+  if (!recentUploadsGrid) return;
+  recentUploadsGrid.innerHTML = "";
+  for (let i = 0; i < 3; i++) {
+    const entry = recentUploadedImages[i];
+    if (!entry) {
+      const empty = document.createElement("div");
+      empty.className = "recent-upload-item empty";
+      empty.setAttribute("aria-hidden", "true");
+      recentUploadsGrid.appendChild(empty);
+      continue;
+    }
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "recent-upload-item";
+    btn.title = "In Upload-Slot übernehmen";
+    btn.setAttribute("aria-label", "Bild in Upload-Slot übernehmen");
+    btn.addEventListener("click", async () => {
+      const slotIndex = getFirstTargetSlot();
+      const ok = await putImageInSlotFromRecent(slotIndex, entry);
+      if (!ok) {
+        setStatus("Gespeichertes Bild konnte nicht geladen werden.", "error");
+        return;
+      }
+      setStatus(`Gespeichertes Bild in Slot ${slotIndex + 1} übernommen.`, "success");
+    });
+    const img = document.createElement("img");
+    img.src = entry.thumb_url || entry.image_url;
+    img.alt = "";
+    btn.appendChild(img);
+    recentUploadsGrid.appendChild(btn);
+  }
+}
+
+async function refreshRecentUploadsGrid() {
+  const list = await loadRecentUploadsFromServer();
+  renderRecentUploadsGrid(list);
+}
+
+async function saveUploadedImageToHistory(file) {
+  if (!file || !file.type.startsWith("image/")) return;
+  const formData = new FormData();
+  formData.append("image", file);
+  try {
+    const res = await fetch("/api/recent-uploaded-images", {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+    if (!res.ok) return;
+    const payload = await res.json().catch(() => ({}));
+    if (Array.isArray(payload.items)) {
+      renderRecentUploadsGrid(payload.items);
+    }
+  } catch {
+    // Bei Fehlern nur UI unverändert lassen.
+  }
+}
+
+/** fal.ai Platform-Historie mit Datei mergen (Web/API-Requests), speichert serverseitig. */
+async function syncRecentRequestsWithFal() {
+  try {
+    const res = await fetch("/api/recent-requests/sync", {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!res.ok) return;
+    const list = await res.json();
+    if (Array.isArray(list)) {
+      renderRecentRequestsGrid(
+        list.map((item) => ({
+          request_id: item.request_id,
+          endpoint_id: item.endpoint_id,
+          image_url: item.image_url,
+          thumb_url:
+            typeof item.thumb_url === "string" && item.thumb_url.trim()
+              ? item.thumb_url.trim()
+              : `/api/recent-thumbnails/${encodeURIComponent(item.request_id)}`,
+          prompt: typeof item.prompt === "string" && item.prompt.trim() ? item.prompt.trim() : null,
+        }))
+      );
+    }
+  } catch (_) {
+    /* Raster bleibt bei GET-Stand */
+  }
+}
+
+/** Nach Login: Raster aus Datei, dann Abgleich mit fal.ai. */
+async function fetchRecentRequestsFromApi() {
+  await refreshRecentRequestsGrid();
+  await syncRecentRequestsWithFal();
 }
 
 /** Prompt-Historie: Von Server laden (session- und geräteübergreifend). */
@@ -229,6 +349,8 @@ const MODEL_LABELS = {
   "flux2-pro-t2i": "Flux 2 Pro (Text-zu-Bild)",
   "gpt-image-edit": "GPT-Image 1.5 (Edit)",
   "gpt-image-mini": "GPT-Image 1 Mini (Text-zu-Bild)",
+  "gpt-image-2-edit": "GPT-Image 2 (Edit)",
+  "gpt-image-2-t2i": "GPT-Image 2 (Text-zu-Bild)",
   "grok-imagine-edit": "Grok Imagine Image (Edit)",
   "grok-imagine-t2i": "Grok Imagine Image (Text-zu-Bild)",
   "remove-bg": "Object Removal / Background entfernen",
@@ -295,6 +417,7 @@ function toggleAuthUI(isAuthenticated) {
     refreshFalBalance();
     fetchRecentRequestsFromApi();
     fetchPromptHistoryAndRender();
+    refreshRecentUploadsGrid();
   } else {
     loginSection.classList.remove("hidden");
     editorSection.classList.add("hidden");
@@ -328,6 +451,7 @@ function isTextToImageModel(modelKey) {
     modelKey === "nano-banana-t2i" ||
     modelKey === "nano-banana-2-t2i" ||
     modelKey === "gpt-image-mini" ||
+    modelKey === "gpt-image-2-t2i" ||
     modelKey === "flux2-dev-t2i" ||
     modelKey === "flux2-pro-t2i" ||
     modelKey === "grok-imagine-t2i"
@@ -381,6 +505,15 @@ function showThumbnail(slotIndex, file) {
   if (slot) slot.classList.add("has-file");
 }
 
+function setSlotFile(slotIndex, file) {
+  const inp = imageInputs[slotIndex];
+  if (!inp || !file) return;
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  inp.files = dt.files;
+  showThumbnail(slotIndex, file);
+}
+
 function clearPreview(slotIndex) {
   const preview = getPreviewEl(slotIndex);
   if (!preview) return;
@@ -399,47 +532,15 @@ function clearAllPreviews() {
   [0, 1, 2].forEach((i) => clearPreview(i));
 }
 
-function setupExamplePrompts() {
-  if (typeof window.EXAMPLE_PROMPTS === "undefined" || !Array.isArray(window.EXAMPLE_PROMPTS) || !exampleCategorySelect || !examplePromptSelect || !promptInput) return;
-  const prompts = window.EXAMPLE_PROMPTS;
-  const categories = [...new Set(prompts.map((p) => p.category))].sort();
-  exampleCategorySelect.innerHTML = '<option value="">— Kategorie wählen —</option>';
-  categories.forEach((cat) => {
-    const opt = document.createElement("option");
-    opt.value = cat;
-    opt.textContent = cat;
-    exampleCategorySelect.appendChild(opt);
-  });
-
-  function fillPromptDropdown(category) {
-    examplePromptSelect.innerHTML = '<option value="">— Beispiel wählen —</option>';
-    if (!category) return;
-    prompts.forEach((p, i) => {
-      if (p.category !== category) return;
-      const opt = document.createElement("option");
-      opt.value = String(i);
-      opt.textContent = p.short;
-      examplePromptSelect.appendChild(opt);
-    });
-  }
-
-  exampleCategorySelect.addEventListener("change", () => {
-    fillPromptDropdown(exampleCategorySelect.value);
-  });
-
-  examplePromptSelect.addEventListener("change", () => {
-    const idx = examplePromptSelect.value;
-    if (idx === "" || !prompts[parseInt(idx, 10)]) return;
-    promptInput.value = prompts[parseInt(idx, 10)].prompt;
-  });
-}
-
 function setupUploadPreviews() {
   imageInputs.forEach((inp, i) => {
     if (!inp) return;
-    inp.addEventListener("change", () => {
+    inp.addEventListener("change", async () => {
       const file = inp.files && inp.files[0];
-      if (file) showThumbnail(i, file);
+      if (file) {
+        showThumbnail(i, file);
+        await saveUploadedImageToHistory(file);
+      }
       else clearPreview(i);
     });
   });
@@ -555,13 +656,8 @@ function setupSelfieCapture() {
           return;
         }
         const file = new File([blob], "selfie.png", { type: "image/png" });
-        const inp = imageInputs[slot];
-        if (inp) {
-          const dt = new DataTransfer();
-          dt.items.add(file);
-          inp.files = dt.files;
-          showThumbnail(slot, file);
-        }
+        setSlotFile(slot, file);
+        void saveUploadedImageToHistory(file);
         closeSelfieModal();
       },
       "image/png",
@@ -710,10 +806,7 @@ editForm.addEventListener("submit", async (event) => {
       return;
     }
 
-    const firstImageUrl = images[0].url || images[0].file_url || images[0].fileUrl;
-    if (data.request_id && data.endpoint_id && firstImageUrl) {
-      pushRecentRequest(data.request_id, data.endpoint_id, firstImageUrl, prompt);
-    }
+    await refreshRecentRequestsGrid();
 
     pushPromptHistory(prompt);
 
@@ -780,11 +873,9 @@ editForm.addEventListener("submit", async (event) => {
 });
 
 function init() {
-  setupExamplePrompts();
   setupUploadPreviews();
   setupSelfieCapture();
   setupPromptHistorySelect();
-  renderRecentRequestsGrid();
   checkAuth();
 }
 

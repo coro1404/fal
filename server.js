@@ -2,7 +2,8 @@ import express from "express";
 import multer from "multer";
 import cookieParser from "cookie-parser";
 import { Readable } from "stream";
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { readFile, writeFile, mkdir, readdir, unlink, access } from "fs/promises";
+import sharp from "sharp";
 import { fal } from "@fal-ai/client";
 import crypto from "crypto";
 import path from "path";
@@ -92,6 +93,14 @@ const MODEL_MAP = {
     endpoint: "fal-ai/gpt-image-1-mini",
     type: "generate",
   },
+  "gpt-image-2-edit": {
+    endpoint: "fal-ai/gpt-image-2/edit",
+    type: "edit",
+  },
+  "gpt-image-2-t2i": {
+    endpoint: "fal-ai/gpt-image-2",
+    type: "generate",
+  },
   // Grok Imagine Image (xAI)
   "grok-imagine-edit": {
     endpoint: "xai/grok-imagine-image/edit",
@@ -144,6 +153,8 @@ const PRICING_USD = {
   "flux2-pro-t2i": 0.04,
   "gpt-image-edit": 0.05,
   "gpt-image-mini": 0.05,
+  "gpt-image-2-edit": 0.07,
+  "gpt-image-2-t2i": 0.07,
   "grok-imagine-edit": 0.022,
   "grok-imagine-t2i": 0.02,
   "remove-bg": 0.02,
@@ -163,6 +174,197 @@ const PROMPT_DATA_DIR = process.env.FAL_DATA_DIR
   ? path.resolve(process.env.FAL_DATA_DIR)
   : path.join(__dirname, "data");
 const PROMPT_HISTORY_FILE = path.join(PROMPT_DATA_DIR, "prompt-history.json");
+
+const RECENT_REQUESTS_MAX = 9;
+const RECENT_REQUESTS_FILE = path.join(PROMPT_DATA_DIR, "recent-requests.json");
+const THUMB_DIR = path.join(PROMPT_DATA_DIR, "thumbnails");
+const THUMB_MAX_EDGE = 288;
+const RECENT_UPLOADS_MAX = 3;
+const RECENT_UPLOADS_FILE = path.join(PROMPT_DATA_DIR, "recent-uploads.json");
+const RECENT_UPLOADS_IMAGE_DIR = path.join(PROMPT_DATA_DIR, "recent-uploads");
+const RECENT_UPLOADS_THUMB_DIR = path.join(PROMPT_DATA_DIR, "recent-uploads-thumbs");
+
+function safeThumbName(requestId) {
+  return String(requestId).replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function thumbnailFilePath(requestId) {
+  return path.join(THUMB_DIR, `${safeThumbName(requestId)}.webp`);
+}
+
+function safeRecentUploadName(id) {
+  return String(id).replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function extForMimeType(mimeType) {
+  switch (mimeType) {
+    case "image/jpeg":
+      return "jpg";
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    default:
+      return "png";
+  }
+}
+
+function recentUploadImagePath(id, ext) {
+  return path.join(RECENT_UPLOADS_IMAGE_DIR, `${safeRecentUploadName(id)}.${ext}`);
+}
+
+function recentUploadThumbPath(id) {
+  return path.join(RECENT_UPLOADS_THUMB_DIR, `${safeRecentUploadName(id)}.webp`);
+}
+
+/** Lädt Ergebnisbild, erzeugt lokales WebP-Vorschaubild (3×3-Raster). */
+async function saveRequestThumbnailFromUrl(sourceUrl, requestId) {
+  if (!sourceUrl || !requestId || String(sourceUrl).startsWith("data:")) return;
+  try {
+    const res = await fetch(sourceUrl);
+    if (!res.ok) return;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length) return;
+    await mkdir(THUMB_DIR, { recursive: true });
+    await sharp(buf)
+      .resize(THUMB_MAX_EDGE, THUMB_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 80 })
+      .toFile(thumbnailFilePath(requestId));
+  } catch (err) {
+    console.error("Thumbnail speichern:", requestId, err?.message || err);
+  }
+}
+
+async function pruneRequestThumbnails(activeRequestIds) {
+  const keep = new Set((activeRequestIds || []).map((id) => `${safeThumbName(id)}.webp`));
+  let files;
+  try {
+    files = await readdir(THUMB_DIR);
+  } catch {
+    return;
+  }
+  for (const f of files) {
+    if (f === ".gitkeep") continue;
+    if (!keep.has(f)) {
+      await unlink(path.join(THUMB_DIR, f)).catch(() => {});
+    }
+  }
+}
+
+function recentRequestSortTime(item) {
+  if (item == null) return 0;
+  if (typeof item.at === "number" && Number.isFinite(item.at)) return item.at;
+  if (item.ended_at) return new Date(item.ended_at).getTime() || 0;
+  return 0;
+}
+
+async function readRecentRequestsFile() {
+  try {
+    const raw = await readFile(RECENT_REQUESTS_FILE, "utf8");
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (err) {
+    if (err?.code === "ENOENT") return [];
+    console.error("Fehler beim Lesen recent-requests.json:", err);
+    return [];
+  }
+}
+
+async function writeRecentRequestsFile(arr) {
+  const dir = path.dirname(RECENT_REQUESTS_FILE);
+  await mkdir(dir, { recursive: true });
+  await writeFile(RECENT_REQUESTS_FILE, JSON.stringify(arr, null, 0), "utf8");
+}
+
+async function readRecentUploadsFile() {
+  try {
+    const raw = await readFile(RECENT_UPLOADS_FILE, "utf8");
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (err) {
+    if (err?.code === "ENOENT") return [];
+    console.error("Fehler beim Lesen recent-uploads.json:", err);
+    return [];
+  }
+}
+
+async function writeRecentUploadsFile(arr) {
+  const dir = path.dirname(RECENT_UPLOADS_FILE);
+  await mkdir(dir, { recursive: true });
+  await writeFile(RECENT_UPLOADS_FILE, JSON.stringify(arr, null, 0), "utf8");
+}
+
+async function pruneRecentUploadFiles(activeEntries) {
+  const imageKeep = new Set((activeEntries || []).map((it) => `${safeRecentUploadName(it.id)}.${it.ext}`));
+  const thumbKeep = new Set((activeEntries || []).map((it) => `${safeRecentUploadName(it.id)}.webp`));
+  let imageFiles = [];
+  let thumbFiles = [];
+  try {
+    imageFiles = await readdir(RECENT_UPLOADS_IMAGE_DIR);
+  } catch {}
+  try {
+    thumbFiles = await readdir(RECENT_UPLOADS_THUMB_DIR);
+  } catch {}
+  for (const f of imageFiles) {
+    if (f === ".gitkeep") continue;
+    if (!imageKeep.has(f)) await unlink(path.join(RECENT_UPLOADS_IMAGE_DIR, f)).catch(() => {});
+  }
+  for (const f of thumbFiles) {
+    if (f === ".gitkeep") continue;
+    if (!thumbKeep.has(f)) await unlink(path.join(RECENT_UPLOADS_THUMB_DIR, f)).catch(() => {});
+  }
+}
+
+function recentUploadsToClientJson(items) {
+  return (items || []).map((item) => ({
+    id: item.id,
+    timestamp: item.timestamp,
+    image_url: `/api/recent-uploaded-images/${encodeURIComponent(item.id)}`,
+    thumb_url: `/api/recent-uploaded-images/${encodeURIComponent(item.id)}/thumb`,
+  }));
+}
+
+/** Chronologisch letzte 9 über alle Quellen; neuere `at` gewinnt bei gleicher request_id. */
+function mergeRecentRequestsByTime(existing, incoming) {
+  const map = new Map();
+  for (const item of [...incoming, ...existing]) {
+    if (!item?.request_id || !item.endpoint_id || !item.image_url) continue;
+    const at = recentRequestSortTime(item);
+    const row = {
+      request_id: item.request_id,
+      endpoint_id: item.endpoint_id,
+      image_url: item.image_url,
+      prompt: item.prompt != null ? item.prompt : null,
+      at,
+    };
+    const prev = map.get(row.request_id);
+    if (!prev || at >= recentRequestSortTime(prev)) map.set(row.request_id, row);
+  }
+  return [...map.values()].sort((a, b) => b.at - a.at).slice(0, RECENT_REQUESTS_MAX);
+}
+
+async function recordRecentRequestEntry({ request_id, endpoint_id, image_url, prompt }) {
+  if (!request_id || !endpoint_id || !image_url) return;
+  try {
+    const list = await readRecentRequestsFile();
+    const next = mergeRecentRequestsByTime(list, [
+      {
+        request_id,
+        endpoint_id,
+        image_url,
+        prompt: typeof prompt === "string" && prompt.trim() ? prompt.trim() : null,
+        at: Date.now(),
+      },
+    ]);
+    await writeRecentRequestsFile(next);
+    await saveRequestThumbnailFromUrl(image_url, request_id);
+    await pruneRequestThumbnails(next.map((r) => r.request_id));
+  } catch (err) {
+    console.error("recent-requests anfügen:", err);
+  }
+}
 
 async function readPromptHistoryFile() {
   try {
@@ -260,6 +462,94 @@ app.post("/api/prompt-history", authMiddleware, async (req, res) => {
   }
 });
 
+// Letzte Uploads: persistent speichern (max. 3) und als Miniaturen ausliefern
+app.get("/api/recent-uploaded-images", authMiddleware, async (req, res) => {
+  try {
+    const list = await readRecentUploadsFile();
+    const sorted = [...list].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return res.json(recentUploadsToClientJson(sorted.slice(0, RECENT_UPLOADS_MAX)));
+  } catch (err) {
+    console.error("Fehler bei GET /api/recent-uploaded-images:", err);
+    return res.json([]);
+  }
+});
+
+app.post(
+  "/api/recent-uploaded-images",
+  authMiddleware,
+  upload.single("image"),
+  async (req, res) => {
+    try {
+      const raw = req.file;
+      if (!raw) return res.status(400).json({ error: "Bild fehlt.", items: [] });
+      const mimeType = raw.mimetype || "image/png";
+      if (!String(mimeType).startsWith("image/")) {
+        return res.status(400).json({ error: "Nur Bilddateien sind erlaubt.", items: [] });
+      }
+      const buffer = raw.buffer ?? (await streamToBuffer(raw.stream));
+      const id = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
+      const ext = extForMimeType(mimeType);
+      const imagePath = recentUploadImagePath(id, ext);
+      const thumbPath = recentUploadThumbPath(id);
+
+      await mkdir(RECENT_UPLOADS_IMAGE_DIR, { recursive: true });
+      await mkdir(RECENT_UPLOADS_THUMB_DIR, { recursive: true });
+      await writeFile(imagePath, buffer);
+      await sharp(buffer)
+        .resize(288, 288, { fit: "cover" })
+        .webp({ quality: 80 })
+        .toFile(thumbPath);
+
+      const current = await readRecentUploadsFile();
+      const next = [
+        { id, ext, timestamp: Date.now() },
+        ...current,
+      ]
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .slice(0, RECENT_UPLOADS_MAX);
+      await writeRecentUploadsFile(next);
+      await pruneRecentUploadFiles(next);
+      return res.json({ items: recentUploadsToClientJson(next) });
+    } catch (err) {
+      console.error("Fehler bei POST /api/recent-uploaded-images:", err);
+      return res.status(500).json({ error: "Upload konnte nicht gespeichert werden.", items: [] });
+    }
+  }
+);
+
+app.get("/api/recent-uploaded-images/:id", authMiddleware, async (req, res) => {
+  try {
+    const id = decodeURIComponent(req.params.id);
+    const list = await readRecentUploadsFile();
+    const item = list.find((it) => it.id === id);
+    if (!item) return res.status(404).end();
+    const filePath = recentUploadImagePath(item.id, item.ext);
+    await access(filePath);
+    const mimeType = item.ext === "jpg" ? "image/jpeg" : `image/${item.ext}`;
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Cache-Control", "public, max-age=604800");
+    return res.sendFile(path.resolve(filePath));
+  } catch {
+    return res.status(404).end();
+  }
+});
+
+app.get("/api/recent-uploaded-images/:id/thumb", authMiddleware, async (req, res) => {
+  try {
+    const id = decodeURIComponent(req.params.id);
+    const list = await readRecentUploadsFile();
+    const exists = list.some((it) => it.id === id);
+    if (!exists) return res.status(404).end();
+    const filePath = recentUploadThumbPath(id);
+    await access(filePath);
+    res.setHeader("Content-Type", "image/webp");
+    res.setHeader("Cache-Control", "public, max-age=604800");
+    return res.sendFile(path.resolve(filePath));
+  } catch {
+    return res.status(404).end();
+  }
+});
+
 // fal.ai Usage/Balance: 24h-Verbrauch aus Platform API (erfordert Admin-Key)
 app.get("/api/fal-balance", authMiddleware, async (req, res) => {
   if (!FAL_KEY) {
@@ -332,75 +622,113 @@ function extractPromptFromPayload(jsonInput) {
   return null;
 }
 
-// Letzte Requests von fal.ai (API + Web-Playground, gleiches Konto). Pro Endpoint abfragen, zusammenführen, max. 9.
-app.get("/api/recent-requests", authMiddleware, async (req, res) => {
-  if (!FAL_KEY) {
-    return res.json([]);
-  }
-  // Alle MODEL_MAP-Endpoints (inkl. Nano Banana Pro/2, Flux, GPT-Image, Grok, Spezial-Tools) + flux-lora
+/** Rohliste aller Treffer von fal Platform-API (alle Endpoints), mit Zeitstempel `at`. */
+async function fetchRecentRequestsFromFalPlatform() {
+  if (!FAL_KEY) return [];
   const endpoints = [
     ...new Set([
       ...Object.values(MODEL_MAP).map((m) => m.endpoint),
       "fal-ai/flux-lora",
     ]),
   ];
-  const limitPerEndpoint = 15;
+  const limitPerEndpoint = 20;
   const allItems = [];
   const endDate = new Date();
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - 7);
 
-  try {
-    await Promise.all(
-      endpoints.map(async (endpointId) => {
-        const url = new URL("https://api.fal.ai/v1/models/requests/by-endpoint");
-        url.searchParams.set("endpoint_id", endpointId);
-        url.searchParams.set("limit", String(limitPerEndpoint));
-        url.searchParams.set("status", "success");
-        url.searchParams.set("expand", "payloads");
-        url.searchParams.set("start", startDate.toISOString());
-        url.searchParams.set("end", endDate.toISOString());
+  await Promise.all(
+    endpoints.map(async (endpointId) => {
+      const url = new URL("https://api.fal.ai/v1/models/requests/by-endpoint");
+      url.searchParams.set("endpoint_id", endpointId);
+      url.searchParams.set("limit", String(limitPerEndpoint));
+      url.searchParams.set("status", "success");
+      url.searchParams.set("expand", "payloads");
+      url.searchParams.set("start", startDate.toISOString());
+      url.searchParams.set("end", endDate.toISOString());
 
-        const resp = await fetch(url.toString(), {
-          headers: { Authorization: `Key ${FAL_KEY}` },
-        });
-        if (!resp.ok) return;
-        const data = await resp.json().catch(() => ({}));
-        const items = data.items || [];
-        for (const it of items) {
-          const jsonOutput = it.json_output ?? (it.payloads && it.payloads.json_output);
-          const jsonInput = it.json_input ?? (it.payloads && it.payloads.json_input);
-          const imageUrl = extractImageUrlFromPayload(jsonOutput);
-          if (imageUrl && it.request_id && it.endpoint_id) {
-            allItems.push({
-              request_id: it.request_id,
-              endpoint_id: it.endpoint_id,
-              ended_at: it.ended_at,
-              image_url: imageUrl,
-              prompt: extractPromptFromPayload(jsonInput),
-            });
-          }
+      const resp = await fetch(url.toString(), {
+        headers: { Authorization: `Key ${FAL_KEY}` },
+      });
+      if (!resp.ok) return;
+      const data = await resp.json().catch(() => ({}));
+      const items = data.items || [];
+      for (const it of items) {
+        const jsonOutput = it.json_output ?? (it.payloads && it.payloads.json_output);
+        const jsonInput = it.json_input ?? (it.payloads && it.payloads.json_input);
+        const imageUrl = extractImageUrlFromPayload(jsonOutput);
+        if (imageUrl && it.request_id && it.endpoint_id) {
+          const at = it.ended_at ? new Date(it.ended_at).getTime() : Date.now();
+          allItems.push({
+            request_id: it.request_id,
+            endpoint_id: it.endpoint_id,
+            image_url: imageUrl,
+            prompt: extractPromptFromPayload(jsonInput),
+            at,
+          });
         }
-      })
-    );
+      }
+    })
+  );
 
-    allItems.sort((a, b) => {
-      const ta = a.ended_at ? new Date(a.ended_at).getTime() : 0;
-      const tb = b.ended_at ? new Date(b.ended_at).getTime() : 0;
-      return tb - ta;
-    });
+  return allItems;
+}
 
-    const result = allItems.slice(0, 9).map(({ request_id, endpoint_id, image_url, prompt }) => ({
-      request_id,
-      endpoint_id,
-      image_url,
-      prompt: prompt || null,
-    }));
+function recentRequestsToClientJson(list) {
+  return list.map(({ request_id, endpoint_id, image_url, prompt }) => ({
+    request_id,
+    endpoint_id,
+    image_url,
+    prompt: prompt || null,
+    thumb_url: `/api/recent-thumbnails/${encodeURIComponent(request_id)}`,
+  }));
+}
 
-    return res.json(result);
+// 3×3-Raster: persistent aus recent-requests.json (chronologisch letzte 9, alle Modelle)
+app.get("/api/recent-requests", authMiddleware, async (req, res) => {
+  try {
+    const list = await readRecentRequestsFile();
+    const sorted = [...list].sort((a, b) => recentRequestSortTime(b) - recentRequestSortTime(a));
+    return res.json(recentRequestsToClientJson(sorted.slice(0, RECENT_REQUESTS_MAX)));
   } catch (err) {
-    console.error("Fehler bei /api/recent-requests:", err);
+    console.error("Fehler bei GET /api/recent-requests:", err);
     return res.json([]);
+  }
+});
+
+app.get("/api/recent-thumbnails/:requestId", authMiddleware, async (req, res) => {
+  try {
+    const rid = decodeURIComponent(req.params.requestId);
+    const p = thumbnailFilePath(rid);
+    await access(p);
+    res.setHeader("Content-Type", "image/webp");
+    res.setHeader("Cache-Control", "public, max-age=604800");
+    res.sendFile(path.resolve(p));
+  } catch {
+    res.status(404).end();
+  }
+});
+
+// Optional: mit fal.ai-Historie abgleichen (Web/API), mergen, Datei speichern
+app.post("/api/recent-requests/sync", authMiddleware, async (req, res) => {
+  try {
+    const fileList = await readRecentRequestsFile();
+    let falList = [];
+    try {
+      falList = await fetchRecentRequestsFromFalPlatform();
+    } catch (e) {
+      console.error("fal recent-requests sync:", e);
+    }
+    const merged = mergeRecentRequestsByTime(fileList, falList);
+    await writeRecentRequestsFile(merged);
+    await Promise.allSettled(
+      merged.map((item) => saveRequestThumbnailFromUrl(item.image_url, item.request_id))
+    );
+    await pruneRequestThumbnails(merged.map((r) => r.request_id));
+    return res.json(recentRequestsToClientJson(merged));
+  } catch (err) {
+    console.error("Fehler bei POST /api/recent-requests/sync:", err);
+    return res.status(500).json([]);
   }
 });
 
@@ -458,8 +786,8 @@ app.post(
           editInput.image_size = "auto";
           editInput.safety_tolerance = "5";
           editInput.enable_safety_checker = false;
-        } else if (modelKey === "gpt-image-edit") {
-          // GPT-Image 1.5 Edit: eigene Parameter, kein aspect_ratio/resolution.
+        } else if (modelKey === "gpt-image-edit" || modelKey === "gpt-image-2-edit") {
+          // GPT-Image Edit-Modelle: eigene Parameter, kein aspect_ratio/resolution.
           editInput.image_size = "auto";
           editInput.background = "auto";
           editInput.quality = "high";
@@ -481,6 +809,13 @@ app.post(
         const { images: raw = [], description = "" } = result.data || {};
         const images = await enrichImageMeta(raw);
         const costUsd = (PRICING_USD[modelKey] ?? 0.03) * (images.length || 1);
+
+        await recordRecentRequestEntry({
+          request_id: result.requestId ?? result.request_id,
+          endpoint_id: model.endpoint,
+          image_url: images[0]?.url || images[0]?.file_url || images[0]?.fileUrl,
+          prompt: prompt?.trim() || null,
+        });
 
         return res.json({
           images,
@@ -515,6 +850,13 @@ app.post(
         const images = await enrichImageMeta(raw);
         const costUsd = (PRICING_USD[modelKey] ?? 0.04) * (images.length || 1);
 
+        await recordRecentRequestEntry({
+          request_id: result.requestId ?? result.request_id,
+          endpoint_id: model.endpoint,
+          image_url: images[0]?.url || images[0]?.file_url || images[0]?.fileUrl,
+          prompt: prompt?.trim() || null,
+        });
+
         return res.json({
           images,
           description: "Bearbeitung mit FLUX.1 Kontext [pro].",
@@ -547,6 +889,13 @@ app.post(
         const images = await enrichImageMeta(raw);
         const costUsd = (PRICING_USD[modelKey] ?? 0.022) * (images.length || 1);
 
+        await recordRecentRequestEntry({
+          request_id: result.requestId ?? result.request_id,
+          endpoint_id: model.endpoint,
+          image_url: images[0]?.url || images[0]?.file_url || images[0]?.fileUrl,
+          prompt: prompt?.trim() || null,
+        });
+
         return res.json({
           images,
           description: revisedPrompt || "Bearbeitung mit Grok Imagine Image.",
@@ -577,6 +926,13 @@ app.post(
         const images = await enrichImageMeta(raw);
         const costUsd = (PRICING_USD[modelKey] ?? 0.03) * (images.length || 1);
 
+        await recordRecentRequestEntry({
+          request_id: result.requestId ?? result.request_id,
+          endpoint_id: model.endpoint,
+          image_url: images[0]?.url || images[0]?.file_url || images[0]?.fileUrl,
+          prompt: removePrompt?.trim() || null,
+        });
+
         return res.json({
           images,
           description: "Objekte/Hintergrund entfernt.",
@@ -605,6 +961,13 @@ app.post(
         const { images: raw = [] } = result.data || {};
         const images = await enrichImageMeta(raw);
         const costUsd = (PRICING_USD[modelKey] ?? 0.03) * (images.length || 1);
+
+        await recordRecentRequestEntry({
+          request_id: result.requestId ?? result.request_id,
+          endpoint_id: model.endpoint,
+          image_url: images[0]?.url || images[0]?.file_url || images[0]?.fileUrl,
+          prompt: null,
+        });
 
         return res.json({
           images,
@@ -697,6 +1060,13 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
     const images = await enrichImageMeta(raw);
     const description = revisedPrompt || desc;
     const costUsd = (PRICING_USD[modelKey] ?? 0.03) * (images.length || 1);
+
+    await recordRecentRequestEntry({
+      request_id: result.requestId ?? result.request_id,
+      endpoint_id: model.endpoint,
+      image_url: images[0]?.url || images[0]?.file_url || images[0]?.fileUrl,
+      prompt: prompt?.trim() || null,
+    });
 
     return res.json({
       images,

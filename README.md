@@ -24,13 +24,14 @@ Eine mobile-first Web-Anwendung zur **Bildbearbeitung und Text-zu-Bild-Generieru
 - **Modellauswahl**: Ein Dropdown wählt zwischen allen unterstützten Modellen (Edit, Text-zu-Bild, Spezial-Tools).
 - **Bild-zu-Bild (Edit)**:
   - Upload von 1–3 Bildern, Prompt, optional Auflösung (1K/2K/4K) und Seitenverhältnis.
-  - Unterstützte Edit-Modelle: Nano Banana Pro, **Nano Banana 2**, Flux 2 Turbo/Pro, FLUX.1 Kontext [pro], GPT-Image 1.5, Grok Imagine Image, Objekt entfernen, Foto-Restaurierung.
-- **Text-zu-Bild**: Prompt, Seitenverhältnis, Anzahl Ausgaben (1–4); Modelle z. B. Nano Banana Pro, **Nano Banana 2**, Flux 2 [dev]/Pro, GPT-Image 1 Mini, Grok Imagine Image.
+  - Unterstützte Edit-Modelle: Nano Banana Pro, **Nano Banana 2**, Flux 2 Turbo/Pro, FLUX.1 Kontext [pro], GPT-Image 1.5, GPT-Image 2, Grok Imagine Image, Objekt entfernen, Foto-Restaurierung.
+- **Text-zu-Bild**: Prompt, Seitenverhältnis, Anzahl Ausgaben (1–4); Modelle z. B. Nano Banana Pro, **Nano Banana 2**, Flux 2 [dev]/Pro, GPT-Image 1 Mini, GPT-Image 2, Grok Imagine Image.
 - **Selfie-Aufnahme**: Optional Bild direkt aus der Kamera aufnehmen und in einen Upload-Slot übernehmen.
-- **Beispielprompts**: Kategorien und Beispiele aus [awesome-nanobanana-pro](https://github.com/ZeroLu/awesome-nanobanana-pro) zum Befüllen des Prompt-Feldes.
 - **Prompt-Historie**: Die letzten 25 verwendeten Prompts werden **serverseitig** in `data/prompt-history.json` gespeichert. Session- und geräteübergreifend: gleiche Historie für alle Nutzer/Sessions; Auswahlbox mit Datum/Uhrzeit, Übernahme in das Prompt-Feld bei Auswahl. **Identische Prompts** (exakt gleicher Text nach Trim) werden nicht erneut eingetragen – bestehender Eintrag bleibt unverändert.
+- **Letzte Uploads (3 Miniaturen)**: Die letzten 3 hochgeladenen Bilder werden **persistent serverseitig** gespeichert und als Miniatur-Buttons unter den Upload-Slots angezeigt. Ein Klick übernimmt ein gespeichertes Bild in den nächsten freien Slot und verwendet es im nächsten Edit-Request wie ein normal hochgeladenes Bild.
 - **Ergebnis**: Anzeige der generierten Bilder mit Auflösung/Größe/Kodierung, Download-Link (über Download-Proxy) und geschätzter Kostenhinweis.
-- **Letzte Requests (3×3-Raster)**: Die letzten 9 erfolgreichen Requests (API + fal.ai Web-Playground) werden aus der fal.ai Platform-API geladen; Klick auf ein Bild öffnet den passenden fal.ai-Playground mit `requestId` und `request_id`. Wo die Plattform den Prompt nicht ins Playground übernimmt („no prompt“), liefert die App den gespeicherten Prompt aus `json_input` (falls vorhanden) und kopiert ihn beim Klick in die Zwischenablage.
+- **Letzte Requests (3×3-Raster)**: Chronologisch die **letzten 9 Requests über alle Modelle** hinweg, persistent in `data/recent-requests.json` (gleicher Speicherort wie die Prompt-Historie / Docker-Volume). Nach Reload oder Container-Neustart lädt die App die gespeicherte Liste; bei Login wird optional per **POST `/api/recent-requests/sync`** mit der fal.ai-Platform-Historie abgeglichen (Web/API). Klick auf ein Miniaturbild öffnet den Playground; bekannte Prompts werden in die Zwischenablage kopiert.
+- **Vorschaubilder (Thumbnails)**: Für das Raster speichert der Server kleine **WebP**-Dateien (max. Kantenlänge 288 px) unter **`data/thumbnails/`** (bzw. `$FAL_DATA_DIR/thumbnails`). Sie werden beim Anlegen/Aktualisieren der Recent-Requests aus der jeweiligen Ergebnis-URL geladen und über **GET `/api/recent-thumbnails/:requestId`** ausgeliefert (mit Cache-Header). Die Oberfläche lädt zuerst diese URL und fällt bei Fehler (z. B. Datei noch nicht erzeugt) auf die Original-**`image_url`** zurück – so entfällt wiederholtes Laden großer CDN-Bilder im Raster.
 - **fal.ai Verbrauch**: Anzeige des 24h-Verbrauchs in USD (wenn der API-Key entsprechende Rechte hat).
 - **Passwortschutz**: Ein globales Passwort (`APP_PASSWORD`); nach Login Session per Cookie (bis zu 30 Tage).
 
@@ -53,12 +54,14 @@ Alle Aufrufe laufen über die fal.ai-API; die App nutzt folgende Endpoints (Ausw
 | Flux 2 Pro (Text-zu-Bild) | `fal-ai/flux-2-pro` | Text-zu-Bild | |
 | GPT-Image 1.5 (Edit) | `fal-ai/gpt-image-1.5/edit` | Edit | |
 | GPT-Image 1 Mini (Text-zu-Bild) | `fal-ai/gpt-image-1-mini` | Text-zu-Bild | |
+| GPT-Image 2 (Edit) | `fal-ai/gpt-image-2/edit` | Edit | |
+| GPT-Image 2 (Text-zu-Bild) | `fal-ai/gpt-image-2` | Text-zu-Bild | |
 | Grok Imagine Image (Edit) | `xai/grok-imagine-image/edit` | Edit (1 Bild) | xAI |
 | Grok Imagine Image (Text-zu-Bild) | `xai/grok-imagine-image` | Text-zu-Bild | xAI |
 | Objekt/Background entfernen | `fal-ai/object-removal` | Spezial | 1 Bild, optionaler Prompt (z. B. „Hintergrund“) |
 | Historische Fotos restaurieren | `fal-ai/image-editing/photo-restoration` | Spezial | 1 Bild, kein Prompt |
 
-Für das **3×3-Raster „Letzte Requests“** werden zusätzlich Requests an das Modell **`fal-ai/flux-lora`** abgefragt (falls vorhanden).
+Beim **Sync** mit fal.ai werden alle konfigurierten Endpoints inkl. **`fal-ai/flux-lora`** abgefragt und mit der Datei gemerged (max. 9 Einträge nach Zeitstempel).
 
 ---
 
@@ -76,8 +79,9 @@ Für das **3×3-Raster „Letzte Requests“** werden zusätzlich Requests an da
 | **dotenv** | ^16.4.5 | Lädt Umgebungsvariablen aus `.env`. |
 | **express** | ^4.22.0 | Web-Framework, Routen, Middleware, statische Dateien. |
 | **multer** | ^2.1.1 | Multipart-Upload (Bilder); Version 2 nutzt Streams, in der App werden Streams in Buffer gelesen für data-URLs an fal.ai. |
+| **sharp** | ^0.33.x | Skaliert Ergebnisbilder zu WebP-Thumbnails für das 3×3-Raster (lokal persistent). |
 
-Keine weiteren Production-Abhängigkeiten. Frontend: Vanilla JS, kein Build-Step.
+Frontend: Vanilla JS, kein Build-Step.
 
 ### Node- und npm-Versionen
 
@@ -90,18 +94,18 @@ Keine weiteren Production-Abhängigkeiten. Frontend: Vanilla JS, kein Build-Step
 
 ```
 falai/
-├── server.js           # Express-Server: Auth, /api/edit, /api/generate, /api/download, /api/recent-requests, /api/prompt-history, /api/fal-balance, statische Dateien
+├── server.js           # Express-Server: Auth, /api/edit, /api/generate, /api/download, /api/recent-requests, /api/recent-thumbnails, /api/prompt-history, /api/fal-balance, statische Dateien
 ├── package.json        # name, scripts, engines, dependencies
 ├── Dockerfile          # node:24-alpine, npm@11, production install, CMD npm start
 ├── docker-compose.yml  # Service „web“, Port 3321, FAL_KEY + APP_PASSWORD
 ├── README.md
-├── data/               # Docker: ./data → /app/data; prompt-history.json (gitignored)
-│   └── .gitkeep
+├── data/               # Docker: ./data → /app/data; prompt-history.json, recent-requests.json, recent-uploads.json (gitignored); thumbnails/*.webp, recent-uploads-thumbs/*.webp (gitignored)
+│   ├── .gitkeep
+│   └── thumbnails/.gitkeep
 └── public/
     ├── index.html      # SPA: Login, Editor (Modell, Prompt, Upload, Selfie, Optionen), Ergebnis, 3×3-Raster
     ├── app.js          # Frontend-Logik: Auth, Formular, Upload-Preview, Selfie-Modal, Ergebnis-Anzeige, Raster, Prompt-Historie
     ├── styles.css      # Layout, Komponenten, Raster, Selfie-Modal
-    └── example-prompts.js # Kategorien/Beispiele für awesome-nanobanana-pro (geladen in index.html)
 ```
 
 ---
@@ -123,7 +127,7 @@ Umgebungsvariablen (lokal oder in Docker/docker-compose):
 | **APP_PASSWORD** | Nein | Passwort für den Login; Standard: `changeme`. |
 | **PORT** | Nein | Port des Servers; Standard: `3321`. |
 | **NODE_ENV** | Nein | z. B. `production` (Docker). |
-| **FAL_DATA_DIR** | Nein | Verzeichnis für `prompt-history.json` (Docker: z. B. `/app/data` bei Volume `./data:/app/data`). Standard: `data/` neben `server.js`. |
+| **FAL_DATA_DIR** | Nein | Verzeichnis für `prompt-history.json`, `recent-requests.json`, `recent-uploads.json` sowie die Ordner **`thumbnails/`**, **`recent-uploads/`** und **`recent-uploads-thumbs/`** (Docker: z. B. `/app/data` bei Volume `./data:/app/data`). Standard: `data/` neben `server.js`. |
 
 Optional: `.env` im Projektroot mit `FAL_KEY=…` und `APP_PASSWORD=…`; wird von `dotenv` geladen.
 
@@ -164,7 +168,7 @@ docker run -p 3321:3321 \
   falai-webapp
 ```
 
-Der Ordner **`./data` auf dem Host** (gebunden nach `/app/data`) enthält `prompt-history.json` und bleibt über Container-Neustarts und Rebuilds erhalten. Ohne Volume und ohne `FAL_DATA_DIR` auf dauerhaftem Speicher geht die Historie bei einem neuen Container verloren.
+Der Ordner **`./data` auf dem Host** (gebunden nach `/app/data`) enthält u. a. `prompt-history.json`, `recent-requests.json`, `recent-uploads.json` sowie **`thumbnails/*.webp`**, **`recent-uploads/*`** und **`recent-uploads-thumbs/*.webp`** und bleibt über Container-Neustarts und Rebuilds erhalten. Ohne Volume und ohne `FAL_DATA_DIR` auf dauerhaftem Speicher gehen diese Daten bei einem neuen Container verloren.
 
 ### Docker Compose
 
@@ -188,7 +192,13 @@ Alle API-Routen (außer Login) erfordern eine gültige Session (Cookie nach Logi
 | GET | `/api/prompt-history` | Liefert die serverseitige Prompt-Historie: `{ items: [ { text, timestamp }, … ] }` (max. 25). |
 | POST | `/api/prompt-history` | Speichert einen neuen Prompt (Body: `{ text: "…" }`), sofern derselbe Text noch nicht in der Historie steht; sonst unveränderte Liste ohne erneutes Schreiben. |
 | GET | `/api/fal-balance` | fal.ai 24h-Verbrauch in USD (wenn Key berechtigt). |
-| GET | `/api/recent-requests` | Letzte 9 erfolgreichen Requests (fal.ai Platform-API, 7 Tage, alle konfigurierten Endpoints inkl. `fal-ai/flux-lora`); Antwort: `[{ request_id, endpoint_id, image_url }]`. |
+| GET | `/api/recent-requests` | Letzte 9 Einträge aus `recent-requests.json` (chronologisch, alle Modelle); Antwort: `[{ request_id, endpoint_id, image_url, thumb_url, prompt? }]`. `thumb_url` zeigt auf **`/api/recent-thumbnails/…`** (URL-kodierte `request_id`). |
+| GET | `/api/recent-thumbnails/:requestId` | Liefert die gespeicherte WebP-Vorschau (404, wenn noch nicht vorhanden); `Cache-Control: public, max-age=604800`. `requestId` ist URL-kodiert. |
+| GET | `/api/recent-uploaded-images` | Liefert die letzten 3 gespeicherten Uploads: `[{ id, timestamp, image_url, thumb_url }]`. |
+| POST | `/api/recent-uploaded-images` | Speichert ein hochgeladenes Bild persistent (FormData-Feld: `image`), erzeugt Miniatur und liefert aktualisierte Liste zurück. |
+| GET | `/api/recent-uploaded-images/:id` | Liefert das gespeicherte Originalbild zur erneuten Verwendung im Upload-Slot. |
+| GET | `/api/recent-uploaded-images/:id/thumb` | Liefert die gespeicherte WebP-Miniatur für die Upload-Historie. |
+| POST | `/api/recent-requests/sync` | Liest Datei, holt Historie von fal.ai (alle Endpoints inkl. `fal-ai/flux-lora`, 7 Tage), merged nach Zeitstempel, speichert zurück, **aktualisiert Thumbnails** und entfernt veraltete Dateien unter `thumbnails/`, liefert die aktuelle Liste. |
 | POST | `/api/edit` | Bild-zu-Bild: `multipart/form-data` (images, prompt, modelKey, …); ruft fal.ai Edit-Endpoints auf. |
 | POST | `/api/generate` | Text-zu-Bild: JSON (prompt, modelKey, aspectRatio, numImages, …). |
 | GET | `/api/download?url=…&filename=…` | Proxy-Download; erlaubte Hosts: `*.fal.media`, `fal.media`, `storage.googleapis.com`. |
