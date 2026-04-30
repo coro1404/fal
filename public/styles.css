@@ -453,6 +453,19 @@ textarea:focus {
   margin-top: 0.5rem;
 }
 
+.recent-uploads-load-more-btn {
+  width: 100%;
+  margin-top: 0.6rem;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(15, 23, 42, 0.75);
+  color: #e5e7eb;
+}
+
+.recent-uploads-load-more-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .recent-upload-item {
   aspect-ratio: 1;
   border-radius: 0.5rem;
@@ -523,6 +536,61 @@ textarea:focus {
   padding: 1.25rem;
   border: 1px solid rgba(148, 163, 184, 0.3);
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+}
+
+.upload-library-inner {
+  max-width: 520px;
+}
+
+.upload-library-list {
+  margin-top: 0.75rem;
+  max-height: 320px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.upload-library-search-field {
+  margin-top: 0.65rem;
+}
+
+.upload-library-sort-field {
+  margin-top: 0.2rem;
+}
+
+.upload-library-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.7);
+  color: #e5e7eb;
+  cursor: pointer;
+  text-align: left;
+}
+
+.upload-library-row:hover {
+  border-color: rgba(59, 130, 246, 0.7);
+}
+
+.upload-library-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 0.45rem;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.upload-library-filename {
+  font-size: 0.84rem;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .selfie-modal-title {

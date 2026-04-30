@@ -139,6 +139,9 @@
                 <span class="upload-slot-label">Letzte Uploads</span>
                 <p class="hint">Die letzten 3 hochgeladenen Bilder bleiben gespeichert. Antippen, um sie in den nächsten freien Bild-Slot zu übernehmen.</p>
                 <div id="recent-uploads-grid" class="recent-uploads-grid" aria-label="Letzte hochgeladene Bilder"></div>
+                <button type="button" class="btn recent-uploads-load-more-btn" id="recent-uploads-load-more-btn">
+                  Mehr laden
+                </button>
               </div>
             </div>
 
@@ -150,6 +153,33 @@
                 <div class="selfie-modal-actions">
                   <button type="button" class="btn selfie-capture-btn" id="selfie-capture-btn">Foto aufnehmen</button>
                   <button type="button" class="btn selfie-cancel-btn" id="selfie-cancel-btn">Abbrechen</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="upload-library-modal" class="selfie-modal hidden" role="dialog" aria-modal="true" aria-labelledby="upload-library-title">
+              <div class="selfie-modal-inner upload-library-inner">
+                <h3 id="upload-library-title" class="selfie-modal-title">Upload-Bibliothek</h3>
+                <p class="hint">Alle gespeicherten Uploads. Tippe ein Bild an, um es in den naechsten freien Slot zu uebernehmen.</p>
+                <label class="field upload-library-search-field">
+                  <span>Dateiname suchen</span>
+                  <input
+                    type="search"
+                    id="upload-library-search-input"
+                    placeholder="z. B. selfie, portrait, bild-01"
+                    autocomplete="off"
+                  />
+                </label>
+                <label class="field upload-library-sort-field">
+                  <span>Sortierung</span>
+                  <select id="upload-library-sort-select" aria-label="Sortierung der Upload-Bibliothek">
+                    <option value="newest">Neueste zuerst</option>
+                    <option value="name-asc">Name A-Z</option>
+                  </select>
+                </label>
+                <div id="upload-library-list" class="upload-library-list" aria-label="Gespeicherte Uploads"></div>
+                <div class="selfie-modal-actions">
+                  <button type="button" class="btn selfie-cancel-btn" id="upload-library-close-btn">Schliessen</button>
                 </div>
               </div>
             </div>

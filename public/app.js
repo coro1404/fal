@@ -37,6 +37,12 @@ const selfieErrorEl = document.getElementById("selfie-error");
 const recentRequestsGrid = document.getElementById("recent-requests-grid");
 const promptHistorySelect = document.getElementById("prompt-history-select");
 const recentUploadsGrid = document.getElementById("recent-uploads-grid");
+const recentUploadsLoadMoreBtn = document.getElementById("recent-uploads-load-more-btn");
+const uploadLibraryModal = document.getElementById("upload-library-modal");
+const uploadLibraryList = document.getElementById("upload-library-list");
+const uploadLibraryCloseBtn = document.getElementById("upload-library-close-btn");
+const uploadLibrarySearchInput = document.getElementById("upload-library-search-input");
+const uploadLibrarySortSelect = document.getElementById("upload-library-sort-select");
 
 function getFalPlaygroundUrl(endpointId, requestId) {
   const base = `https://fal.ai/models/${endpointId}/playground`;
@@ -64,6 +70,7 @@ function showPlaygroundPromptToast(message) {
 /** Aktuelle 3×3-Einträge (vom Server), für Klick-Handler / Playground. */
 let recentRequestsList = [];
 let recentUploadedImages = [];
+let allUploadedImages = [];
 
 function renderRecentRequestsGrid(list) {
   if (Array.isArray(list)) recentRequestsList = list;
@@ -155,6 +162,18 @@ async function loadRecentUploadsFromServer() {
   }
 }
 
+async function loadAllUploadsFromServer() {
+  try {
+    const res = await fetch("/api/recent-uploaded-images?all=1", { credentials: "include" });
+    if (!res.ok) return [];
+    const list = await res.json();
+    if (!Array.isArray(list)) return [];
+    return list;
+  } catch {
+    return [];
+  }
+}
+
 function getFirstTargetSlot() {
   const empty = getFirstEmptySlot();
   if (empty >= 0) return empty;
@@ -167,7 +186,11 @@ async function putImageInSlotFromRecent(slotIndex, imageMeta) {
   if (!res.ok) return false;
   const blob = await res.blob();
   const ext = blob.type?.split("/")[1] || "png";
-  const file = new File([blob], `recent-upload-${imageMeta.id}.${ext}`, { type: blob.type || "image/png" });
+  const fallbackName = `recent-upload-${imageMeta.id}.${ext}`;
+  const fileName = typeof imageMeta.filename === "string" && imageMeta.filename.trim()
+    ? imageMeta.filename.trim()
+    : fallbackName;
+  const file = new File([blob], fileName, { type: blob.type || "image/png" });
   setSlotFile(slotIndex, file);
   return true;
 }
@@ -205,11 +228,18 @@ function renderRecentUploadsGrid(list) {
     btn.appendChild(img);
     recentUploadsGrid.appendChild(btn);
   }
+  if (recentUploadsLoadMoreBtn) {
+    recentUploadsLoadMoreBtn.disabled = allUploadedImages.length === 0;
+  }
 }
 
 async function refreshRecentUploadsGrid() {
-  const list = await loadRecentUploadsFromServer();
-  renderRecentUploadsGrid(list);
+  const [recentList, allList] = await Promise.all([
+    loadRecentUploadsFromServer(),
+    loadAllUploadsFromServer(),
+  ]);
+  allUploadedImages = Array.isArray(allList) ? allList : [];
+  renderRecentUploadsGrid(recentList);
 }
 
 async function saveUploadedImageToHistory(file) {
@@ -227,9 +257,95 @@ async function saveUploadedImageToHistory(file) {
     if (Array.isArray(payload.items)) {
       renderRecentUploadsGrid(payload.items);
     }
+    allUploadedImages = await loadAllUploadsFromServer();
   } catch {
     // Bei Fehlern nur UI unverändert lassen.
   }
+}
+
+function closeUploadLibraryModal() {
+  if (!uploadLibraryModal) return;
+  uploadLibraryModal.classList.add("hidden");
+}
+
+function renderUploadLibraryList(list) {
+  if (!uploadLibraryList) return;
+  uploadLibraryList.innerHTML = "";
+  if (!Array.isArray(list) || list.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "Keine gespeicherten Uploads vorhanden.";
+    uploadLibraryList.appendChild(empty);
+    return;
+  }
+  list.forEach((entry) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "upload-library-row";
+    row.title = "In Upload-Slot uebernehmen";
+    row.addEventListener("click", async () => {
+      const slotIndex = getFirstTargetSlot();
+      const ok = await putImageInSlotFromRecent(slotIndex, entry);
+      if (!ok) {
+        setStatus("Gespeichertes Bild konnte nicht geladen werden.", "error");
+        return;
+      }
+      setStatus(`Gespeichertes Bild in Slot ${slotIndex + 1} uebernommen.`, "success");
+      closeUploadLibraryModal();
+    });
+
+    const thumb = document.createElement("img");
+    thumb.src = entry.thumb_url || entry.image_url;
+    thumb.alt = "";
+    thumb.className = "upload-library-thumb";
+
+    const name = document.createElement("span");
+    name.className = "upload-library-filename";
+    name.textContent = entry.filename || "Unbenanntes Bild";
+
+    row.appendChild(thumb);
+    row.appendChild(name);
+    uploadLibraryList.appendChild(row);
+  });
+}
+
+function getFilteredUploadLibraryList() {
+  const query = (uploadLibrarySearchInput?.value || "").trim().toLowerCase();
+  let list = !query
+    ? [...allUploadedImages]
+    : allUploadedImages.filter((entry) =>
+    String(entry.filename || "").toLowerCase().includes(query)
+  );
+  const sortMode = uploadLibrarySortSelect?.value || "newest";
+  if (sortMode === "name-asc") {
+    list.sort((a, b) => String(a.filename || "").localeCompare(String(b.filename || ""), "de"));
+  } else {
+    list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }
+  return list;
+}
+
+function setupUploadLibraryPicker() {
+  if (!recentUploadsLoadMoreBtn || !uploadLibraryModal) return;
+  recentUploadsLoadMoreBtn.addEventListener("click", async () => {
+    if (!allUploadedImages.length) {
+      allUploadedImages = await loadAllUploadsFromServer();
+    }
+    if (uploadLibrarySearchInput) uploadLibrarySearchInput.value = "";
+    if (uploadLibrarySortSelect) uploadLibrarySortSelect.value = "newest";
+    renderUploadLibraryList(getFilteredUploadLibraryList());
+    uploadLibraryModal.classList.remove("hidden");
+  });
+  uploadLibrarySearchInput?.addEventListener("input", () => {
+    renderUploadLibraryList(getFilteredUploadLibraryList());
+  });
+  uploadLibrarySortSelect?.addEventListener("change", () => {
+    renderUploadLibraryList(getFilteredUploadLibraryList());
+  });
+  uploadLibraryCloseBtn?.addEventListener("click", closeUploadLibraryModal);
+  uploadLibraryModal.addEventListener("click", (event) => {
+    if (event.target === uploadLibraryModal) closeUploadLibraryModal();
+  });
 }
 
 /** fal.ai Platform-Historie mit Datei mergen (Web/API-Requests), speichert serverseitig. */
@@ -908,6 +1024,7 @@ editForm.addEventListener("submit", async (event) => {
 
 function init() {
   setupUploadPreviews();
+  setupUploadLibraryPicker();
   setupSelfieCapture();
   setupPromptHistorySelect();
   checkAuth();

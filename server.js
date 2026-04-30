@@ -215,7 +215,7 @@ const RECENT_REQUESTS_MAX = 9;
 const RECENT_REQUESTS_FILE = path.join(PROMPT_DATA_DIR, "recent-requests.json");
 const THUMB_DIR = path.join(PROMPT_DATA_DIR, "thumbnails");
 const THUMB_MAX_EDGE = 288;
-const RECENT_UPLOADS_MAX = 3;
+const RECENT_UPLOADS_PREVIEW_MAX = 3;
 const RECENT_UPLOADS_FILE = path.join(PROMPT_DATA_DIR, "recent-uploads.json");
 const RECENT_UPLOADS_IMAGE_DIR = path.join(PROMPT_DATA_DIR, "recent-uploads");
 const RECENT_UPLOADS_THUMB_DIR = path.join(PROMPT_DATA_DIR, "recent-uploads-thumbs");
@@ -357,6 +357,10 @@ function recentUploadsToClientJson(items) {
   return (items || []).map((item) => ({
     id: item.id,
     timestamp: item.timestamp,
+    filename:
+      typeof item.filename === "string" && item.filename.trim()
+        ? item.filename.trim()
+        : `upload-${item.id}.${item.ext || "png"}`,
     image_url: `/api/recent-uploaded-images/${encodeURIComponent(item.id)}`,
     thumb_url: `/api/recent-uploaded-images/${encodeURIComponent(item.id)}/thumb`,
   }));
@@ -503,7 +507,9 @@ app.get("/api/recent-uploaded-images", authMiddleware, async (req, res) => {
   try {
     const list = await readRecentUploadsFile();
     const sorted = [...list].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-    return res.json(recentUploadsToClientJson(sorted.slice(0, RECENT_UPLOADS_MAX)));
+    const includeAll = String(req.query.all || "").toLowerCase() === "1";
+    const payload = includeAll ? sorted : sorted.slice(0, RECENT_UPLOADS_PREVIEW_MAX);
+    return res.json(recentUploadsToClientJson(payload));
   } catch (err) {
     console.error("Fehler bei GET /api/recent-uploaded-images:", err);
     return res.json([]);
@@ -525,6 +531,10 @@ app.post(
       const buffer = raw.buffer ?? (await streamToBuffer(raw.stream));
       const id = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
       const ext = extForMimeType(mimeType);
+      const originalFilename = String(raw.originalname || "").trim();
+      const safeOriginalFilename = originalFilename
+        ? originalFilename.replace(/[^a-zA-Z0-9._-]/g, "_")
+        : `upload-${id}.${ext}`;
       const imagePath = recentUploadImagePath(id, ext);
       const thumbPath = recentUploadThumbPath(id);
 
@@ -538,14 +548,13 @@ app.post(
 
       const current = await readRecentUploadsFile();
       const next = [
-        { id, ext, timestamp: Date.now() },
+        { id, ext, filename: safeOriginalFilename, timestamp: Date.now() },
         ...current,
       ]
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-        .slice(0, RECENT_UPLOADS_MAX);
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       await writeRecentUploadsFile(next);
       await pruneRecentUploadFiles(next);
-      return res.json({ items: recentUploadsToClientJson(next) });
+      return res.json({ items: recentUploadsToClientJson(next.slice(0, RECENT_UPLOADS_PREVIEW_MAX)) });
     } catch (err) {
       console.error("Fehler bei POST /api/recent-uploaded-images:", err);
       return res.status(500).json({ error: "Upload konnte nicht gespeichert werden.", items: [] });
