@@ -458,6 +458,34 @@ function isTextToImageModel(modelKey) {
   );
 }
 
+function getEditModelImageLimit(modelKey) {
+  switch (modelKey) {
+    case "nano-banana-edit":
+    case "nano-banana-2-edit":
+      return 3;
+    default:
+      return 1;
+  }
+}
+
+function applyEditUploadLimit(modelKey) {
+  const maxImages = getEditModelImageLimit(modelKey);
+  imageInputs.forEach((inp, i) => {
+    if (!inp) return;
+    const isEnabled = i < maxImages;
+    inp.disabled = !isEnabled;
+    inp.required = i === 0;
+    const slot = inp.closest(".upload-slot");
+    if (slot) {
+      slot.classList.toggle("disabled", !isEnabled);
+      slot.setAttribute("aria-disabled", String(!isEnabled));
+    }
+    if (!isEnabled && inp.files && inp.files.length > 0) {
+      clearPreview(i);
+    }
+  });
+}
+
 /** UI (Prompt, Upload, Anzahl) anhand des gewählten Modells ein-/ausblenden. */
 function syncModeToModel() {
   const modelKey = modelSelect.value;
@@ -467,7 +495,11 @@ function syncModeToModel() {
   if (isGenerate) {
     uploadGroup.classList.add("hidden");
     numImagesGroup.classList.remove("hidden");
-    imageInputs.forEach((inp) => inp && (inp.required = false));
+    imageInputs.forEach((inp) => {
+      if (!inp) return;
+      inp.required = false;
+      inp.disabled = false;
+    });
     if (promptInput) promptInput.required = true;
     if (promptGroup) promptGroup.classList.remove("hidden");
     if (aspectSelect && aspectSelect.value === "auto") aspectSelect.value = "1:1";
@@ -476,7 +508,7 @@ function syncModeToModel() {
   } else {
     uploadGroup.classList.remove("hidden");
     numImagesGroup.classList.add("hidden");
-    if (imageInputs[0]) imageInputs[0].required = true;
+    applyEditUploadLimit(modelKey);
     if (promptInput) promptInput.required = !promptHidden;
     if (promptGroup) promptGroup.classList.toggle("hidden", promptHidden);
     submitButton.textContent = "Bild(er) ändern/erzeugen";
@@ -738,12 +770,14 @@ editForm.addEventListener("submit", async (event) => {
     const files = imageInputs
       .filter((inp) => inp && inp.files && inp.files[0])
       .map((inp) => inp.files[0]);
+    const maxImages = getEditModelImageLimit(modelKey);
     if (files.length === 0) {
       setStatus("Bitte lade mindestens Bild 1 hoch.", "error");
       return;
     }
-    if (files.length > 3) {
-      setStatus("Es sind maximal 3 Bilder erlaubt.", "error");
+    if (files.length > maxImages) {
+      const label = maxImages === 1 ? "dieses Modell" : "dieses Modell";
+      setStatus(`Für ${label} sind maximal ${maxImages} Bild(er) erlaubt.`, "error");
       return;
     }
   }

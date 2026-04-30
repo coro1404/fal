@@ -360,6 +360,16 @@ textarea:focus {
   background: rgba(15, 23, 42, 0.5);
 }
 
+.upload-slot.disabled {
+  opacity: 0.5;
+  border-color: rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.upload-slot.disabled .upload-slot-label {
+  color: #9ca3af;
+}
+
 .upload-slot-label {
   font-size: 0.9rem;
   color: #e5e7eb;
@@ -370,6 +380,10 @@ textarea:focus {
   padding: 0.35rem 0;
   font-size: 0.85rem;
   cursor: pointer;
+}
+
+.upload-slot.disabled input[type="file"] {
+  cursor: not-allowed;
 }
 
 .upload-preview {
@@ -414,6 +428,10 @@ textarea:focus {
 
 .upload-slot.has-file .btn-clear-slot {
   display: inline-block;
+}
+
+.upload-slot.disabled .btn-clear-slot {
+  display: none !important;
 }
 
 .btn-clear-slot:hover {

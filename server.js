@@ -121,6 +121,42 @@ const MODEL_MAP = {
   },
 };
 
+// Modellabhängige Limits für Upload-Slots bei /api/edit.
+const EDIT_MODEL_IMAGE_LIMITS = {
+  "nano-banana-edit": { min: 1, max: 3 },
+  "nano-banana-2-edit": { min: 1, max: 3 },
+  "flux2-edit": { min: 1, max: 1 },
+  "flux2-pro-edit": { min: 1, max: 1 },
+  "gpt-image-edit": { min: 1, max: 1 },
+  "gpt-image-2-edit": { min: 1, max: 1 },
+  "flux-pro-kontext": { min: 1, max: 1 },
+  "grok-imagine-edit": { min: 1, max: 1 },
+  "remove-bg": { min: 1, max: 1 },
+  "restore-photo": { min: 1, max: 1 },
+};
+
+function extractFalErrorMessage(err) {
+  const detail = err?.body?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
+  if (Array.isArray(detail)) {
+    const chunks = detail
+      .map((entry) => {
+        if (typeof entry === "string") return entry.trim();
+        if (!entry || typeof entry !== "object") return "";
+        const loc = Array.isArray(entry.loc) ? entry.loc.join(".") : "";
+        const msg = typeof entry.msg === "string" ? entry.msg.trim() : "";
+        if (loc && msg) return `${loc}: ${msg}`;
+        return msg || "";
+      })
+      .filter(Boolean);
+    if (chunks.length) return chunks.join(" | ");
+  }
+  const bodyMessage = err?.body?.message;
+  if (typeof bodyMessage === "string" && bodyMessage.trim()) return bodyMessage.trim();
+  if (typeof err?.message === "string" && err.message.trim()) return err.message.trim();
+  return "Fehler beim Aufruf der fal.ai API.";
+}
+
 /** Ergänzt fehlende file_size per HEAD-Request an die Bild-URL. */
 async function enrichImageMeta(images) {
   if (!Array.isArray(images) || !images.length) return images;
@@ -766,6 +802,15 @@ app.post(
       );
 
       const model = MODEL_MAP[modelKey] || MODEL_MAP["nano-banana-edit"];
+      const imageLimits = EDIT_MODEL_IMAGE_LIMITS[modelKey] || { min: 1, max: 1 };
+      if (files.length < imageLimits.min || files.length > imageLimits.max) {
+        const rangeHint = imageLimits.min === imageLimits.max
+          ? `genau ${imageLimits.min}`
+          : `${imageLimits.min} bis ${imageLimits.max}`;
+        return res.status(400).json({
+          error: `Das Modell ${modelKey} erwartet ${rangeHint} Bild(er).`,
+        });
+      }
 
       if (model.type === "edit") {
         const imageUrls = files.map((file) => {
@@ -982,13 +1027,17 @@ app.post(
       return res.status(400).json({ error: "Ungültiger Edit-Modus oder Modelltyp." });
     } catch (err) {
       console.error("Fehler bei /api/edit:", err);
-      const message = err?.body?.detail || err?.body?.message || err?.message;
-      const userMessage =
-        message && typeof message === "string" && message.length < 300
-          ? message
-          : "Fehler beim Aufruf der fal.ai API.";
+      const status = Number(err?.status);
+      const userMessage = extractFalErrorMessage(err);
+      if (status === 422) {
+        return res.status(422).json({
+          error: userMessage,
+          request_id: err?.requestId ?? null,
+        });
+      }
       return res.status(500).json({
         error: userMessage,
+        request_id: err?.requestId ?? null,
       });
     }
   }
