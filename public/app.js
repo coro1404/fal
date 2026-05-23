@@ -46,8 +46,8 @@ const uploadLibrarySortSelect = document.getElementById("upload-library-sort-sel
 const thumbHoverPreview = document.getElementById("thumb-hover-preview");
 const thumbHoverPreviewImg = thumbHoverPreview?.querySelector("img");
 
-const THUMB_HOVER_PREVIEW_MAX = 400;
-const THUMB_HOVER_PREVIEW_OFFSET = 18;
+const THUMB_HOVER_PREVIEW_MAX = 720;
+const THUMB_HOVER_PREVIEW_OFFSET = 20;
 
 function attachThumbHoverPreview(img, previewSrc) {
   if (!img || !previewSrc || !thumbHoverPreview || !thumbHoverPreviewImg) return;
@@ -79,8 +79,8 @@ function hideThumbHoverPreview() {
 
 function moveThumbHoverPreview(event) {
   if (!thumbHoverPreview || thumbHoverPreview.classList.contains("hidden")) return;
-  const maxW = Math.min(THUMB_HOVER_PREVIEW_MAX, window.innerWidth * 0.9);
-  const maxH = Math.min(THUMB_HOVER_PREVIEW_MAX, window.innerHeight * 0.78);
+  const maxW = Math.min(THUMB_HOVER_PREVIEW_MAX, window.innerWidth * 0.92);
+  const maxH = Math.min(THUMB_HOVER_PREVIEW_MAX, window.innerHeight * 0.88);
   let x = event.clientX + THUMB_HOVER_PREVIEW_OFFSET;
   let y = event.clientY + THUMB_HOVER_PREVIEW_OFFSET;
   if (x + maxW > window.innerWidth - 8) {

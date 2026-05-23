@@ -643,19 +643,19 @@ textarea:focus {
   position: fixed;
   z-index: 10000;
   pointer-events: none;
-  padding: 0.35rem;
+  padding: 0.5rem;
   background: rgba(15, 23, 42, 0.97);
   border: 1px solid rgba(148, 163, 184, 0.45);
   border-radius: 0.5rem;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
-  max-width: min(420px, 92vw);
-  max-height: min(420px, 80vh);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6);
+  max-width: min(740px, 94vw);
+  max-height: min(740px, 90vh);
 }
 
 .thumb-hover-preview img {
   display: block;
-  max-width: min(400px, 90vw);
-  max-height: min(400px, 78vh);
+  max-width: min(720px, 92vw);
+  max-height: min(720px, 88vh);
   width: auto;
   height: auto;
   object-fit: contain;
