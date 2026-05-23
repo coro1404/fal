@@ -1180,8 +1180,8 @@ app.get("/api/download", authMiddleware, async (req, res) => {
   }
 });
 
-// Fallback: index.html für Single-Page-Feeling
-app.get("*", (req, res) => {
+// Fallback: index.html für Single-Page-Feeling (Express 5: benannte Wildcard)
+app.get("/{*splat}", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 

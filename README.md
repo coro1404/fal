@@ -74,10 +74,10 @@ Beim **Sync** mit fal.ai werden alle konfigurierten Endpoints inkl. **`fal-ai/fl
 
 | Paket | Version (SemVer-Range) | Zweck |
 |-------|------------------------|--------|
-| **@fal-ai/client** | ^1.10.0 | Offizieller fal.ai JavaScript-Client; `fal.subscribe()` für synchrone Modell-Aufrufe. |
+| **@fal-ai/client** | ^1.10.1 | Offizieller fal.ai JavaScript-Client; `fal.subscribe()` für synchrone Modell-Aufrufe. |
 | **cookie-parser** | ^1.4.7 | Middleware zum Auslesen von Cookies (Session-Token). |
 | **dotenv** | ^17.4.2 | Lädt Umgebungsvariablen aus `.env`. |
-| **express** | ^4.22.0 | Web-Framework, Routen, Middleware, statische Dateien. |
+| **express** | ^5.2.1 | Web-Framework, Routen, Middleware, statische Dateien. |
 | **multer** | ^2.1.1 | Multipart-Upload (Bilder); Version 2 nutzt Streams, in der App werden Streams in Buffer gelesen für data-URLs an fal.ai. |
 | **sharp** | ^0.34.5 | Skaliert Ergebnisbilder zu WebP-Thumbnails für das 3×3-Raster (lokal persistent). |
 
@@ -86,7 +86,7 @@ Frontend: Vanilla JS, kein Build-Step.
 ### Node- und npm-Versionen
 
 - **Node**: `>=24.0.0` (in `package.json` unter `engines.node`).
-- **npm**: Im Docker-Build wird global `npm@11` installiert, um die „New major version“-Meldung zu vermeiden.
+- **npm**: Im Docker-Build wird global `npm@11.15.0` installiert.
 
 ---
 
