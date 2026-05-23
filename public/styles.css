@@ -632,6 +632,36 @@ textarea:focus {
   color: #e5e7eb;
 }
 
+/* Hover-Vorschau für Miniaturbilder (Maus) */
+@media (hover: hover) and (pointer: fine) {
+  img.thumb-hoverable {
+    cursor: zoom-in;
+  }
+}
+
+.thumb-hover-preview {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  padding: 0.35rem;
+  background: rgba(15, 23, 42, 0.97);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 0.5rem;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  max-width: min(420px, 92vw);
+  max-height: min(420px, 80vh);
+}
+
+.thumb-hover-preview img {
+  display: block;
+  max-width: min(400px, 90vw);
+  max-height: min(400px, 78vh);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 0.35rem;
+}
+
 @media (min-width: 768px) {
   #app {
     max-width: 720px;

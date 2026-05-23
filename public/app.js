@@ -43,6 +43,59 @@ const uploadLibraryList = document.getElementById("upload-library-list");
 const uploadLibraryCloseBtn = document.getElementById("upload-library-close-btn");
 const uploadLibrarySearchInput = document.getElementById("upload-library-search-input");
 const uploadLibrarySortSelect = document.getElementById("upload-library-sort-select");
+const thumbHoverPreview = document.getElementById("thumb-hover-preview");
+const thumbHoverPreviewImg = thumbHoverPreview?.querySelector("img");
+
+const THUMB_HOVER_PREVIEW_MAX = 400;
+const THUMB_HOVER_PREVIEW_OFFSET = 18;
+
+function attachThumbHoverPreview(img, previewSrc) {
+  if (!img || !previewSrc || !thumbHoverPreview || !thumbHoverPreviewImg) return;
+  img.classList.add("thumb-hoverable");
+  img.dataset.previewSrc = previewSrc;
+  if (img.dataset.thumbHoverBound === "1") return;
+  img.dataset.thumbHoverBound = "1";
+  img.addEventListener("mouseenter", showThumbHoverPreview);
+  img.addEventListener("mouseleave", hideThumbHoverPreview);
+  img.addEventListener("mousemove", moveThumbHoverPreview);
+}
+
+function showThumbHoverPreview(event) {
+  const img = event.currentTarget;
+  const src = img.dataset.previewSrc || img.currentSrc || img.src;
+  if (!src) return;
+  thumbHoverPreviewImg.src = src;
+  thumbHoverPreview.classList.remove("hidden");
+  thumbHoverPreview.setAttribute("aria-hidden", "false");
+  moveThumbHoverPreview(event);
+}
+
+function hideThumbHoverPreview() {
+  if (!thumbHoverPreview || !thumbHoverPreviewImg) return;
+  thumbHoverPreview.classList.add("hidden");
+  thumbHoverPreview.setAttribute("aria-hidden", "true");
+  thumbHoverPreviewImg.removeAttribute("src");
+}
+
+function moveThumbHoverPreview(event) {
+  if (!thumbHoverPreview || thumbHoverPreview.classList.contains("hidden")) return;
+  const maxW = Math.min(THUMB_HOVER_PREVIEW_MAX, window.innerWidth * 0.9);
+  const maxH = Math.min(THUMB_HOVER_PREVIEW_MAX, window.innerHeight * 0.78);
+  let x = event.clientX + THUMB_HOVER_PREVIEW_OFFSET;
+  let y = event.clientY + THUMB_HOVER_PREVIEW_OFFSET;
+  if (x + maxW > window.innerWidth - 8) {
+    x = event.clientX - maxW - THUMB_HOVER_PREVIEW_OFFSET;
+  }
+  if (y + maxH > window.innerHeight - 8) {
+    y = event.clientY - maxH - THUMB_HOVER_PREVIEW_OFFSET;
+  }
+  x = Math.max(8, x);
+  y = Math.max(8, y);
+  thumbHoverPreview.style.left = `${x}px`;
+  thumbHoverPreview.style.top = `${y}px`;
+}
+
+window.addEventListener("scroll", hideThumbHoverPreview, true);
 
 function getFalPlaygroundUrl(endpointId, requestId) {
   const base = `https://fal.ai/models/${endpointId}/playground`;
@@ -117,6 +170,7 @@ function renderRecentRequestsGrid(list) {
           img.src = full;
         });
       }
+      attachThumbHoverPreview(img, full);
       a.appendChild(img);
       cell.appendChild(a);
     }
@@ -225,6 +279,7 @@ function renderRecentUploadsGrid(list) {
     const img = document.createElement("img");
     img.src = entry.thumb_url || entry.image_url;
     img.alt = "";
+    attachThumbHoverPreview(img, entry.image_url);
     btn.appendChild(img);
     recentUploadsGrid.appendChild(btn);
   }
@@ -298,6 +353,7 @@ function renderUploadLibraryList(list) {
     thumb.src = entry.thumb_url || entry.image_url;
     thumb.alt = "";
     thumb.className = "upload-library-thumb";
+    attachThumbHoverPreview(thumb, entry.image_url);
 
     const name = document.createElement("span");
     name.className = "upload-library-filename";
@@ -648,6 +704,7 @@ function showThumbnail(slotIndex, file) {
   img.src = url;
   img.alt = `Vorschau Bild ${slotIndex + 1}`;
   img.referrerPolicy = "no-referrer";
+  attachThumbHoverPreview(img, url);
   preview.appendChild(img);
   preview.classList.add("has-thumb");
   if (slot) slot.classList.add("has-file");
