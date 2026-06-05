@@ -5,3 +5,6 @@ data/thumbnails/*.webp
 data/recent-uploads.json
 data/recent-uploads/*
 data/recent-uploads-thumbs/*.webp
+data/sets.json
+data/sets/*
+data/sets-thumbs/*

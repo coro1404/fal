@@ -72,7 +72,7 @@
                 <span>Prompt / Beschreibung</span>
                 <textarea
                   id="prompt-input"
-                  rows="3"
+                  rows="6"
                   placeholder="Beschreibe, wie das Bild angepasst werden soll …"
                 ></textarea>
               </label>
@@ -83,6 +83,23 @@
                     <option value="">— Prompt aus Historie wählen —</option>
                   </select>
                 </label>
+              </div>
+              <div id="prompt-sets-box" class="prompt-sets-box">
+                <label class="field">
+                  <span>Gespeicherte Sets</span>
+                  <select id="prompt-sets-select" aria-label="Gespeicherte Sets">
+                    <option value="">— Set laden —</option>
+                  </select>
+                </label>
+                <div class="prompt-sets-actions">
+                  <button type="button" class="btn prompt-sets-save-btn" id="save-set-btn">
+                    Set speichern
+                  </button>
+                  <button type="button" class="btn prompt-sets-delete-btn" id="delete-set-btn" disabled>
+                    Set löschen
+                  </button>
+                </div>
+                <p class="hint">Sets speichern Prompt und Bilder pro Slot dauerhaft und laden sie beim Auswählen wieder.</p>
               </div>
             </div>
 
@@ -153,6 +170,29 @@
                 <div class="selfie-modal-actions">
                   <button type="button" class="btn selfie-capture-btn" id="selfie-capture-btn">Foto aufnehmen</button>
                   <button type="button" class="btn selfie-cancel-btn" id="selfie-cancel-btn">Abbrechen</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="save-set-modal" class="selfie-modal hidden" role="dialog" aria-modal="true" aria-labelledby="save-set-modal-title">
+              <div class="selfie-modal-inner">
+                <h3 id="save-set-modal-title" class="selfie-modal-title">Set speichern</h3>
+                <p class="hint">Speichert den aktuellen Prompt und alle Bilder in den Slots 1–3 dauerhaft auf dem Server.</p>
+                <label class="field">
+                  <span>Name des Sets</span>
+                  <input
+                    type="text"
+                    id="save-set-name-input"
+                    maxlength="120"
+                    placeholder="z. B. Portrait-Retusche"
+                    autocomplete="off"
+                    required
+                  />
+                </label>
+                <p id="save-set-error" class="error-message hidden" aria-live="polite"></p>
+                <div class="selfie-modal-actions">
+                  <button type="button" class="btn primary" id="save-set-confirm-btn">Speichern</button>
+                  <button type="button" class="btn selfie-cancel-btn" id="save-set-cancel-btn">Abbrechen</button>
                 </div>
               </div>
             </div>
@@ -245,7 +285,7 @@
       </main>
     </div>
 
-    <div id="thumb-hover-preview" class="thumb-hover-preview hidden" aria-hidden="true">
+    <div id="thumb-hover-preview" class="thumb-hover-preview" aria-hidden="true">
       <img alt="" />
     </div>
 

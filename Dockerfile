@@ -6,11 +6,11 @@ RUN mkdir -p /app/data
 
 ENV FAL_DATA_DIR=/app/data
 
-RUN npm install -g npm@11.15.0
+RUN npm install -g npm@11.16.0
 
-COPY package.json ./
+COPY package.json package-lock.json ./
 
-RUN npm install --production
+RUN npm ci --omit=dev
 
 COPY . .
 

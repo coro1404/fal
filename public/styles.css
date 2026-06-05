@@ -65,12 +65,11 @@ body {
 }
 
 .card {
-  background: rgba(15, 23, 42, 0.9);
+  background: rgba(15, 23, 42, 0.96);
   border-radius: 1rem;
   padding: 1rem 1.25rem;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.65);
   border: 1px solid rgba(148, 163, 184, 0.2);
-  backdrop-filter: blur(18px);
 }
 
 .card h2 {
@@ -340,6 +339,51 @@ textarea:focus {
   font-size: 0.9rem;
 }
 
+.prompt-sets-box {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.prompt-sets-box select {
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+.prompt-sets-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.prompt-sets-save-btn {
+  flex: 1;
+  min-width: 8rem;
+  border: 1px solid rgba(59, 130, 246, 0.55);
+  background: rgba(37, 99, 235, 0.25);
+  color: #dbeafe;
+}
+
+.prompt-sets-delete-btn {
+  flex: 1;
+  min-width: 8rem;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  background: rgba(127, 29, 29, 0.25);
+  color: #fecaca;
+}
+
+.prompt-sets-delete-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.prompt-sets-box .hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+}
+
 .hidden {
   display: none !important;
 }
@@ -520,8 +564,7 @@ textarea:focus {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.88);
 }
 
 .selfie-modal.hidden {
@@ -641,6 +684,8 @@ textarea:focus {
 
 .thumb-hover-preview {
   position: fixed;
+  left: 0;
+  top: 0;
   z-index: 10000;
   pointer-events: none;
   padding: 0.5rem;
@@ -650,6 +695,14 @@ textarea:focus {
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6);
   max-width: min(740px, 94vw);
   max-height: min(740px, 90vh);
+  opacity: 0;
+  visibility: hidden;
+  will-change: transform;
+}
+
+.thumb-hover-preview.is-visible {
+  opacity: 1;
+  visibility: visible;
 }
 
 .thumb-hover-preview img {

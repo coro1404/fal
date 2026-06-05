@@ -86,7 +86,7 @@ Frontend: Vanilla JS, kein Build-Step.
 ### Node- und npm-Versionen
 
 - **Node**: `>=24.0.0` (in `package.json` unter `engines.node`).
-- **npm**: Im Docker-Build wird global `npm@11.15.0` installiert.
+- **npm**: Im Docker-Build wird global `npm@11.16.0` installiert; Abhängigkeiten via `npm ci`.
 
 ---
 

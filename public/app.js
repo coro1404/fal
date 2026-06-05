@@ -36,6 +36,14 @@ const selfieCancelBtn = document.getElementById("selfie-cancel-btn");
 const selfieErrorEl = document.getElementById("selfie-error");
 const recentRequestsGrid = document.getElementById("recent-requests-grid");
 const promptHistorySelect = document.getElementById("prompt-history-select");
+const promptSetsSelect = document.getElementById("prompt-sets-select");
+const saveSetBtn = document.getElementById("save-set-btn");
+const deleteSetBtn = document.getElementById("delete-set-btn");
+const saveSetModal = document.getElementById("save-set-modal");
+const saveSetNameInput = document.getElementById("save-set-name-input");
+const saveSetConfirmBtn = document.getElementById("save-set-confirm-btn");
+const saveSetCancelBtn = document.getElementById("save-set-cancel-btn");
+const saveSetErrorEl = document.getElementById("save-set-error");
 const recentUploadsGrid = document.getElementById("recent-uploads-grid");
 const recentUploadsLoadMoreBtn = document.getElementById("recent-uploads-load-more-btn");
 const uploadLibraryModal = document.getElementById("upload-library-modal");
@@ -48,6 +56,8 @@ const thumbHoverPreviewImg = thumbHoverPreview?.querySelector("img");
 
 const THUMB_HOVER_PREVIEW_MAX = 720;
 const THUMB_HOVER_PREVIEW_OFFSET = 20;
+let thumbHoverScrollBlock = false;
+let thumbHoverScrollTimer = 0;
 
 function attachThumbHoverPreview(img, previewSrc) {
   if (!img || !previewSrc || !thumbHoverPreview || !thumbHoverPreviewImg) return;
@@ -61,24 +71,26 @@ function attachThumbHoverPreview(img, previewSrc) {
 }
 
 function showThumbHoverPreview(event) {
+  if (thumbHoverScrollBlock) return;
   const img = event.currentTarget;
   const src = img.dataset.previewSrc || img.currentSrc || img.src;
   if (!src) return;
-  thumbHoverPreviewImg.src = src;
-  thumbHoverPreview.classList.remove("hidden");
+  if (thumbHoverPreviewImg.getAttribute("src") !== src) {
+    thumbHoverPreviewImg.src = src;
+  }
+  thumbHoverPreview.classList.add("is-visible");
   thumbHoverPreview.setAttribute("aria-hidden", "false");
   moveThumbHoverPreview(event);
 }
 
 function hideThumbHoverPreview() {
   if (!thumbHoverPreview || !thumbHoverPreviewImg) return;
-  thumbHoverPreview.classList.add("hidden");
+  thumbHoverPreview.classList.remove("is-visible");
   thumbHoverPreview.setAttribute("aria-hidden", "true");
-  thumbHoverPreviewImg.removeAttribute("src");
 }
 
 function moveThumbHoverPreview(event) {
-  if (!thumbHoverPreview || thumbHoverPreview.classList.contains("hidden")) return;
+  if (!thumbHoverPreview || !thumbHoverPreview.classList.contains("is-visible")) return;
   const maxW = Math.min(THUMB_HOVER_PREVIEW_MAX, window.innerWidth * 0.92);
   const maxH = Math.min(THUMB_HOVER_PREVIEW_MAX, window.innerHeight * 0.88);
   let x = event.clientX + THUMB_HOVER_PREVIEW_OFFSET;
@@ -91,11 +103,19 @@ function moveThumbHoverPreview(event) {
   }
   x = Math.max(8, x);
   y = Math.max(8, y);
-  thumbHoverPreview.style.left = `${x}px`;
-  thumbHoverPreview.style.top = `${y}px`;
+  thumbHoverPreview.style.transform = `translate3d(${x}px, ${y}px, 0)`;
 }
 
-window.addEventListener("scroll", hideThumbHoverPreview, true);
+function onThumbHoverScroll() {
+  hideThumbHoverPreview();
+  thumbHoverScrollBlock = true;
+  window.clearTimeout(thumbHoverScrollTimer);
+  thumbHoverScrollTimer = window.setTimeout(() => {
+    thumbHoverScrollBlock = false;
+  }, 180);
+}
+
+window.addEventListener("scroll", onThumbHoverScroll, { capture: true, passive: true });
 
 function getFalPlaygroundUrl(endpointId, requestId) {
   const base = `https://fal.ai/models/${endpointId}/playground`;
@@ -509,6 +529,224 @@ function setupPromptHistorySelect() {
   });
 }
 
+/** Gespeicherte Sets (Prompt + Slot-Bilder). */
+let promptSetsList = [];
+let selectedSetId = null;
+
+async function fetchPromptSets() {
+  try {
+    const res = await fetch("/api/sets", { credentials: "include" });
+    const data = await res.json().catch(() => ({}));
+    return Array.isArray(data.items) ? data.items : [];
+  } catch {
+    return [];
+  }
+}
+
+function renderPromptSetsSelect(list, keepSelection = true) {
+  promptSetsList = list || [];
+  if (!promptSetsSelect) return;
+  const prev = keepSelection ? selectedSetId : null;
+  promptSetsSelect.innerHTML = '<option value="">— Set laden —</option>';
+  promptSetsList.forEach((item) => {
+    const opt = document.createElement("option");
+    opt.value = item.id;
+    const date = new Date(item.timestamp || 0);
+    const dateStr = date.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const timeStr = date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    const imageCount = (item.slots || []).filter(Boolean).length;
+    opt.textContent = `${item.name} · ${dateStr} ${timeStr} · ${imageCount} Bild(er)`;
+    promptSetsSelect.appendChild(opt);
+  });
+  if (prev && promptSetsList.some((s) => s.id === prev)) {
+    promptSetsSelect.value = prev;
+    selectedSetId = prev;
+  } else {
+    promptSetsSelect.value = "";
+    selectedSetId = null;
+  }
+  if (deleteSetBtn) deleteSetBtn.disabled = !selectedSetId;
+}
+
+async function fetchPromptSetsAndRender() {
+  const list = await fetchPromptSets();
+  renderPromptSetsSelect(list);
+}
+
+function openSaveSetModal() {
+  if (!saveSetModal || !saveSetNameInput) return;
+  saveSetNameInput.value = "";
+  if (saveSetErrorEl) {
+    saveSetErrorEl.textContent = "";
+    saveSetErrorEl.classList.add("hidden");
+  }
+  saveSetModal.classList.remove("hidden");
+  saveSetNameInput.focus();
+}
+
+function closeSaveSetModal() {
+  if (!saveSetModal) return;
+  saveSetModal.classList.add("hidden");
+}
+
+async function submitSaveSet() {
+  if (!saveSetNameInput) return;
+  const name = saveSetNameInput.value.trim();
+  if (!name) {
+    if (saveSetErrorEl) {
+      saveSetErrorEl.textContent = "Bitte einen Namen für das Set eingeben.";
+      saveSetErrorEl.classList.remove("hidden");
+    }
+    return;
+  }
+
+  const prompt = promptInput?.value ?? "";
+  const formData = new FormData();
+  formData.append("name", name);
+  formData.append("prompt", prompt);
+  let hasContent = !!prompt.trim();
+  imageInputs.forEach((inp, i) => {
+    const file = inp?.files?.[0];
+    if (file) {
+      formData.append(`image_slot_${i}`, file);
+      hasContent = true;
+    }
+  });
+
+  if (!hasContent) {
+    if (saveSetErrorEl) {
+      saveSetErrorEl.textContent = "Set braucht mindestens einen Prompt oder ein Bild.";
+      saveSetErrorEl.classList.remove("hidden");
+    }
+    return;
+  }
+
+  if (saveSetConfirmBtn) saveSetConfirmBtn.disabled = true;
+  try {
+    const res = await fetch("/api/sets", {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (saveSetErrorEl) {
+        saveSetErrorEl.textContent = data.error || "Set konnte nicht gespeichert werden.";
+        saveSetErrorEl.classList.remove("hidden");
+      }
+      return;
+    }
+    if (Array.isArray(data.items)) {
+      const saved = data.items.find((s) => s.name === name) || data.items[0];
+      selectedSetId = saved?.id || null;
+      renderPromptSetsSelect(data.items);
+      if (selectedSetId && promptSetsSelect) promptSetsSelect.value = selectedSetId;
+    } else {
+      await fetchPromptSetsAndRender();
+    }
+    closeSaveSetModal();
+    setStatus(`Set „${name}" gespeichert.`, "success");
+  } catch (err) {
+    console.error(err);
+    if (saveSetErrorEl) {
+      saveSetErrorEl.textContent = "Netzwerkfehler beim Speichern.";
+      saveSetErrorEl.classList.remove("hidden");
+    }
+  } finally {
+    if (saveSetConfirmBtn) saveSetConfirmBtn.disabled = false;
+  }
+}
+
+async function loadPromptSet(setId) {
+  if (!setId) return;
+  try {
+    const res = await fetch(`/api/sets/${encodeURIComponent(setId)}`, { credentials: "include" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(data.error || "Set konnte nicht geladen werden.", "error");
+      return;
+    }
+
+    if (promptInput) promptInput.value = data.prompt || "";
+    clearAllPreviews();
+
+    const slots = Array.isArray(data.slots) ? data.slots : [];
+    for (let i = 0; i < 3; i++) {
+      const slot = slots[i];
+      if (!slot?.image_url) continue;
+      const imgRes = await fetch(slot.image_url, { credentials: "include" });
+      if (!imgRes.ok) continue;
+      const blob = await imgRes.blob();
+      const ext = blob.type?.split("/")[1] || "png";
+      const fileName =
+        typeof slot.filename === "string" && slot.filename.trim()
+          ? slot.filename.trim()
+          : `set-${setId}-slot-${i + 1}.${ext}`;
+      const file = new File([blob], fileName, { type: blob.type || "image/png" });
+      setSlotFile(i, file);
+    }
+
+    selectedSetId = setId;
+    if (deleteSetBtn) deleteSetBtn.disabled = false;
+    setStatus(`Set „${data.name}" geladen.`, "success");
+  } catch (err) {
+    console.error(err);
+    setStatus("Set konnte nicht geladen werden.", "error");
+  }
+}
+
+async function deleteSelectedPromptSet() {
+  if (!selectedSetId) return;
+  const entry = promptSetsList.find((s) => s.id === selectedSetId);
+  const label = entry?.name || "dieses Set";
+  if (!window.confirm(`Set „${label}" wirklich löschen?`)) return;
+
+  try {
+    const res = await fetch(`/api/sets/${encodeURIComponent(selectedSetId)}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(data.error || "Set konnte nicht gelöscht werden.", "error");
+      return;
+    }
+    selectedSetId = null;
+    if (Array.isArray(data.items)) renderPromptSetsSelect(data.items, false);
+    else await fetchPromptSetsAndRender();
+    setStatus("Set gelöscht.", "success");
+  } catch (err) {
+    console.error(err);
+    setStatus("Set konnte nicht gelöscht werden.", "error");
+  }
+}
+
+function setupPromptSets() {
+  saveSetBtn?.addEventListener("click", openSaveSetModal);
+  saveSetCancelBtn?.addEventListener("click", closeSaveSetModal);
+  saveSetConfirmBtn?.addEventListener("click", submitSaveSet);
+  saveSetModal?.addEventListener("click", (event) => {
+    if (event.target === saveSetModal) closeSaveSetModal();
+  });
+  saveSetNameInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void submitSaveSet();
+    }
+  });
+  deleteSetBtn?.addEventListener("click", () => {
+    void deleteSelectedPromptSet();
+  });
+  promptSetsSelect?.addEventListener("change", () => {
+    const id = promptSetsSelect.value;
+    selectedSetId = id || null;
+    if (deleteSetBtn) deleteSetBtn.disabled = !selectedSetId;
+    if (!id) return;
+    void loadPromptSet(id);
+    promptSetsSelect.value = id;
+  });
+}
+
 const MODEL_LABELS = {
   "nano-banana-edit": "Nano Banana Pro (Edit)",
   "nano-banana-t2i": "Nano Banana Pro (Text-zu-Bild)",
@@ -589,6 +827,7 @@ function toggleAuthUI(isAuthenticated) {
     refreshFalBalance();
     fetchRecentRequestsFromApi();
     fetchPromptHistoryAndRender();
+    fetchPromptSetsAndRender();
     refreshRecentUploadsGrid();
   } else {
     loginSection.classList.remove("hidden");
@@ -1084,6 +1323,7 @@ function init() {
   setupUploadLibraryPicker();
   setupSelfieCapture();
   setupPromptHistorySelect();
+  setupPromptSets();
   checkAuth();
 }
 

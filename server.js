@@ -219,6 +219,10 @@ const RECENT_UPLOADS_PREVIEW_MAX = 3;
 const RECENT_UPLOADS_FILE = path.join(PROMPT_DATA_DIR, "recent-uploads.json");
 const RECENT_UPLOADS_IMAGE_DIR = path.join(PROMPT_DATA_DIR, "recent-uploads");
 const RECENT_UPLOADS_THUMB_DIR = path.join(PROMPT_DATA_DIR, "recent-uploads-thumbs");
+const SETS_FILE = path.join(PROMPT_DATA_DIR, "sets.json");
+const SETS_IMAGE_DIR = path.join(PROMPT_DATA_DIR, "sets");
+const SETS_THUMB_DIR = path.join(PROMPT_DATA_DIR, "sets-thumbs");
+const SETS_MAX = 50;
 
 function safeThumbName(requestId) {
   return String(requestId).replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -253,6 +257,100 @@ function recentUploadImagePath(id, ext) {
 
 function recentUploadThumbPath(id) {
   return path.join(RECENT_UPLOADS_THUMB_DIR, `${safeRecentUploadName(id)}.webp`);
+}
+
+function safeSetId(id) {
+  return String(id).replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function setImagePath(setId, slotIndex, ext) {
+  return path.join(SETS_IMAGE_DIR, safeSetId(setId), `slot-${slotIndex}.${ext}`);
+}
+
+function setThumbPath(setId, slotIndex) {
+  return path.join(SETS_THUMB_DIR, safeSetId(setId), `slot-${slotIndex}.webp`);
+}
+
+async function readSetsFile() {
+  try {
+    const raw = await readFile(SETS_FILE, "utf8");
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (err) {
+    if (err?.code === "ENOENT") return [];
+    console.error("Fehler beim Lesen sets.json:", err);
+    return [];
+  }
+}
+
+async function writeSetsFile(arr) {
+  const dir = path.dirname(SETS_FILE);
+  await mkdir(dir, { recursive: true });
+  await writeFile(SETS_FILE, JSON.stringify(arr, null, 0), "utf8");
+}
+
+function setSlotToClientJson(setId, slotIndex, slotMeta) {
+  if (!slotMeta) return null;
+  return {
+    filename: slotMeta.filename || `slot-${slotIndex + 1}.${slotMeta.ext || "png"}`,
+    image_url: `/api/sets/${encodeURIComponent(setId)}/slots/${slotIndex}`,
+    thumb_url: `/api/sets/${encodeURIComponent(setId)}/slots/${slotIndex}/thumb`,
+  };
+}
+
+function setToClientJson(entry) {
+  const slots = Array.isArray(entry.slots) ? entry.slots : [null, null, null];
+  return {
+    id: entry.id,
+    name: entry.name,
+    prompt: entry.prompt ?? "",
+    timestamp: entry.timestamp,
+    slots: [0, 1, 2].map((i) => setSlotToClientJson(entry.id, i, slots[i] ?? null)),
+  };
+}
+
+async function deleteSetFiles(setId) {
+  const dirName = safeSetId(setId);
+  const imageDir = path.join(SETS_IMAGE_DIR, dirName);
+  const thumbDir = path.join(SETS_THUMB_DIR, dirName);
+  for (const dir of [imageDir, thumbDir]) {
+    let files;
+    try {
+      files = await readdir(dir);
+    } catch {
+      continue;
+    }
+    for (const f of files) {
+      await unlink(path.join(dir, f)).catch(() => {});
+    }
+  }
+}
+
+async function pruneOrphanSetDirs(activeSetIds) {
+  const keep = new Set((activeSetIds || []).map((id) => safeSetId(id)));
+  for (const baseDir of [SETS_IMAGE_DIR, SETS_THUMB_DIR]) {
+    let dirs;
+    try {
+      dirs = await readdir(baseDir);
+    } catch {
+      continue;
+    }
+    for (const d of dirs) {
+      if (d === ".gitkeep") continue;
+      if (!keep.has(d)) {
+        const full = path.join(baseDir, d);
+        let files;
+        try {
+          files = await readdir(full);
+        } catch {
+          continue;
+        }
+        for (const f of files) {
+          await unlink(path.join(full, f)).catch(() => {});
+        }
+      }
+    }
+  }
 }
 
 /** Lädt Ergebnisbild, erzeugt lokales WebP-Vorschaubild (3×3-Raster). */
@@ -588,6 +686,184 @@ app.get("/api/recent-uploaded-images/:id/thumb", authMiddleware, async (req, res
     const filePath = recentUploadThumbPath(id);
     await access(filePath);
     res.setHeader("Content-Type", "image/webp");
+    res.setHeader("Cache-Control", "public, max-age=604800");
+    return res.sendFile(path.resolve(filePath));
+  } catch {
+    return res.status(404).end();
+  }
+});
+
+// Gespeicherte Sets: Prompt + Bilder pro Slot (persistent)
+app.get("/api/sets", authMiddleware, async (req, res) => {
+  try {
+    const list = await readSetsFile();
+    const sorted = [...list].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return res.json({ items: sorted.map(setToClientJson) });
+  } catch (err) {
+    console.error("Fehler bei GET /api/sets:", err);
+    return res.status(500).json({ error: "Sets konnten nicht geladen werden.", items: [] });
+  }
+});
+
+app.get("/api/sets/:id", authMiddleware, async (req, res) => {
+  try {
+    const id = decodeURIComponent(req.params.id);
+    const list = await readSetsFile();
+    const entry = list.find((it) => it.id === id);
+    if (!entry) return res.status(404).json({ error: "Set nicht gefunden." });
+    return res.json(setToClientJson(entry));
+  } catch (err) {
+    console.error("Fehler bei GET /api/sets/:id:", err);
+    return res.status(500).json({ error: "Set konnte nicht geladen werden." });
+  }
+});
+
+app.post(
+  "/api/sets",
+  authMiddleware,
+  upload.fields([
+    { name: "image_slot_0", maxCount: 1 },
+    { name: "image_slot_1", maxCount: 1 },
+    { name: "image_slot_2", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    try {
+      const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+      const prompt = typeof req.body?.prompt === "string" ? req.body.prompt : "";
+      if (!name) {
+        return res.status(400).json({ error: "Set-Name fehlt.", items: [] });
+      }
+      if (name.length > 120) {
+        return res.status(400).json({ error: "Set-Name ist zu lang (max. 120 Zeichen).", items: [] });
+      }
+
+      const slots = [null, null, null];
+      let hasImage = false;
+      for (let i = 0; i < 3; i++) {
+        const raw = req.files?.[`image_slot_${i}`]?.[0];
+        if (!raw) continue;
+        const mimeType = raw.mimetype || "image/png";
+        if (!String(mimeType).startsWith("image/")) {
+          return res.status(400).json({ error: `Slot ${i + 1}: Nur Bilddateien sind erlaubt.`, items: [] });
+        }
+        const buffer = raw.buffer ?? (await streamToBuffer(raw.stream));
+        const ext = extForMimeType(mimeType);
+        const originalFilename = String(raw.originalname || "").trim();
+        slots[i] = {
+          ext,
+          filename: originalFilename
+            ? originalFilename.replace(/[^a-zA-Z0-9._-]/g, "_")
+            : `slot-${i + 1}.${ext}`,
+        };
+        hasImage = true;
+        slots[i]._buffer = buffer;
+      }
+
+      if (!prompt.trim() && !hasImage) {
+        return res.status(400).json({
+          error: "Set braucht mindestens einen Prompt oder ein Bild.",
+          items: [],
+        });
+      }
+
+      const id = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
+      const imageDir = path.join(SETS_IMAGE_DIR, safeSetId(id));
+      const thumbDir = path.join(SETS_THUMB_DIR, safeSetId(id));
+      await mkdir(imageDir, { recursive: true });
+      await mkdir(thumbDir, { recursive: true });
+
+      for (let i = 0; i < 3; i++) {
+        const slot = slots[i];
+        if (!slot?._buffer) {
+          slots[i] = null;
+          continue;
+        }
+        const buffer = slot._buffer;
+        delete slot._buffer;
+        const imagePath = setImagePath(id, i, slot.ext);
+        const thumbPath = setThumbPath(id, i);
+        await writeFile(imagePath, buffer);
+        await sharp(buffer)
+          .resize(288, 288, { fit: "cover" })
+          .webp({ quality: 80 })
+          .toFile(thumbPath);
+      }
+
+      const entry = {
+        id,
+        name,
+        prompt,
+        timestamp: Date.now(),
+        slots,
+      };
+
+      const list = await readSetsFile();
+      const next = [entry, ...list].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, SETS_MAX);
+      await writeSetsFile(next);
+      await pruneOrphanSetDirs(next.map((s) => s.id));
+
+      return res.json({ items: next.map(setToClientJson) });
+    } catch (err) {
+      console.error("Fehler bei POST /api/sets:", err);
+      return res.status(500).json({ error: "Set konnte nicht gespeichert werden.", items: [] });
+    }
+  }
+);
+
+app.delete("/api/sets/:id", authMiddleware, async (req, res) => {
+  try {
+    const id = decodeURIComponent(req.params.id);
+    const list = await readSetsFile();
+    const next = list.filter((it) => it.id !== id);
+    if (next.length === list.length) {
+      return res.status(404).json({ error: "Set nicht gefunden.", items: [] });
+    }
+    await writeSetsFile(next);
+    await deleteSetFiles(id);
+    await pruneOrphanSetDirs(next.map((s) => s.id));
+    return res.json({ items: next.map(setToClientJson) });
+  } catch (err) {
+    console.error("Fehler bei DELETE /api/sets/:id:", err);
+    return res.status(500).json({ error: "Set konnte nicht gelöscht werden.", items: [] });
+  }
+});
+
+app.get("/api/sets/:id/slots/:slotIndex/thumb", authMiddleware, async (req, res) => {
+  try {
+    const id = decodeURIComponent(req.params.id);
+    const slotIndex = parseInt(req.params.slotIndex, 10);
+    if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex > 2) {
+      return res.status(400).end();
+    }
+    const list = await readSetsFile();
+    const entry = list.find((it) => it.id === id);
+    const slot = entry?.slots?.[slotIndex];
+    if (!slot) return res.status(404).end();
+    const filePath = setThumbPath(id, slotIndex);
+    await access(filePath);
+    res.setHeader("Content-Type", "image/webp");
+    res.setHeader("Cache-Control", "public, max-age=604800");
+    return res.sendFile(path.resolve(filePath));
+  } catch {
+    return res.status(404).end();
+  }
+});
+
+app.get("/api/sets/:id/slots/:slotIndex", authMiddleware, async (req, res) => {
+  try {
+    const id = decodeURIComponent(req.params.id);
+    const slotIndex = parseInt(req.params.slotIndex, 10);
+    if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex > 2) {
+      return res.status(400).end();
+    }
+    const list = await readSetsFile();
+    const entry = list.find((it) => it.id === id);
+    const slot = entry?.slots?.[slotIndex];
+    if (!slot) return res.status(404).end();
+    const filePath = setImagePath(id, slotIndex, slot.ext);
+    await access(filePath);
+    const mimeType = slot.ext === "jpg" ? "image/jpeg" : `image/${slot.ext}`;
+    res.setHeader("Content-Type", mimeType);
     res.setHeader("Cache-Control", "public, max-age=604800");
     return res.sendFile(path.resolve(filePath));
   } catch {
