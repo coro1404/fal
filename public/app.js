@@ -23,6 +23,51 @@ const aspectSelect = document.getElementById("aspect-select");
 const submitButton = document.getElementById("submit-button");
 const statusMessage = document.getElementById("status-message");
 const statusText = document.getElementById("status-text");
+const debugPanel = document.getElementById("debug-panel");
+const debugLogEl = document.getElementById("debug-log");
+
+const DEBUG_ENABLED =
+  new URLSearchParams(window.location.search).has("debug") ||
+  localStorage.getItem("falai-debug") === "1";
+const debugEntries = [];
+const DEBUG_MAX = 80;
+
+function debugLog(message, data) {
+  const ts = new Date().toLocaleTimeString("de-DE", { hour12: false });
+  const line =
+    data !== undefined
+      ? `[${ts}] ${message} ${typeof data === "string" ? data : JSON.stringify(data, null, 0)}`
+      : `[${ts}] ${message}`;
+  debugEntries.unshift(line);
+  if (debugEntries.length > DEBUG_MAX) debugEntries.length = DEBUG_MAX;
+  console.log("[falai]", message, data !== undefined ? data : "");
+  if (debugLogEl) debugLogEl.textContent = debugEntries.join("\n");
+}
+
+function initDebugPanel() {
+  if (!debugPanel) return;
+  if (DEBUG_ENABLED) {
+    debugPanel.classList.remove("hidden");
+    debugLog("Debug-Modus aktiv");
+  }
+}
+
+function getSlotFilesSummary() {
+  return imageInputs.map((inp, i) => {
+    const file = inp?.files?.[0];
+    const preview = document.getElementById(`preview-${i + 1}`);
+    const hasPreview = Boolean(preview?.classList.contains("has-thumb"));
+    return {
+      slot: i + 1,
+      disabled: Boolean(inp?.disabled),
+      filesLength: inp?.files?.length ?? 0,
+      fileName: file?.name ?? null,
+      fileSize: file?.size ?? null,
+      fileType: file?.type ?? null,
+      hasPreview,
+    };
+  });
+}
 
 const resultsGrid = document.getElementById("results-grid");
 const resultDescription = document.getElementById("result-description");
@@ -879,13 +924,41 @@ function getEditModelImageLimit(modelKey) {
   }
 }
 
+function getFormDebugSnapshot() {
+  const modelKey = modelSelect?.value ?? "";
+  return {
+    modelKey,
+    mode: isTextToImageModel(modelKey) ? "generate" : "edit",
+    promptLength: (promptInput?.value ?? "").trim().length,
+    uploadGroupHidden: uploadGroup?.classList.contains("hidden"),
+    slots: getSlotFilesSummary(),
+  };
+}
+
+function reportNativeValidationFailures() {
+  const invalid = [...editForm.querySelectorAll("input, textarea, select")].filter(
+    (el) => !el.closest(".selfie-modal") && !el.disabled && !el.checkValidity()
+  );
+  if (!invalid.length) return false;
+  const first = invalid[0];
+  const msg = first.validationMessage || "Unbekanntes Validierungsproblem";
+  debugLog("Native Validierung blockiert Submit", {
+    id: first.id,
+    name: first.name,
+    message: msg,
+  });
+  setStatus(`Formular ungültig (${first.id || first.name || "Feld"}): ${msg}`, "error");
+  first.reportValidity?.();
+  return true;
+}
+
 function applyEditUploadLimit(modelKey) {
   const maxImages = getEditModelImageLimit(modelKey);
   imageInputs.forEach((inp, i) => {
     if (!inp) return;
     const isEnabled = i < maxImages;
     inp.disabled = !isEnabled;
-    inp.required = i === 0;
+    inp.removeAttribute("required");
     const slot = inp.closest(".upload-slot");
     if (slot) {
       slot.classList.toggle("disabled", !isEnabled);
@@ -908,10 +981,10 @@ function syncModeToModel() {
     numImagesGroup.classList.remove("hidden");
     imageInputs.forEach((inp) => {
       if (!inp) return;
-      inp.required = false;
+      inp.removeAttribute("required");
       inp.disabled = false;
     });
-    if (promptInput) promptInput.required = true;
+    if (promptInput) promptInput.removeAttribute("required");
     if (promptGroup) promptGroup.classList.remove("hidden");
     if (aspectSelect && aspectSelect.value === "auto") aspectSelect.value = "1:1";
     clearAllPreviews();
@@ -920,7 +993,7 @@ function syncModeToModel() {
     uploadGroup.classList.remove("hidden");
     numImagesGroup.classList.add("hidden");
     applyEditUploadLimit(modelKey);
-    if (promptInput) promptInput.required = !promptHidden;
+    if (promptInput) promptInput.removeAttribute("required");
     if (promptGroup) promptGroup.classList.toggle("hidden", promptHidden);
     submitButton.textContent = "Bild(er) ändern/erzeugen";
   }
@@ -937,7 +1010,11 @@ function showThumbnail(slotIndex, file) {
   preview.removeAttribute("aria-hidden");
   const slot = preview.closest(".upload-slot");
   if (slot) slot.classList.remove("has-file");
-  if (!file || !file.type.startsWith("image/")) return;
+  if (!file) return;
+  const isImage =
+    (file.type && file.type.startsWith("image/")) ||
+    /\.(jpe?g|png|gif|webp)$/i.test(file.name || "");
+  if (!isImage) return;
   const url = URL.createObjectURL(file);
   const img = document.createElement("img");
   img.src = url;
@@ -956,6 +1033,12 @@ function setSlotFile(slotIndex, file) {
   dt.items.add(file);
   inp.files = dt.files;
   showThumbnail(slotIndex, file);
+  debugLog(`Slot ${slotIndex + 1} gesetzt`, {
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    inputFilesLength: inp.files?.length ?? 0,
+  });
 }
 
 function clearPreview(slotIndex) {
@@ -1164,6 +1247,9 @@ syncModeToModel();
 
 editForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  debugLog("Submit gestartet", getFormDebugSnapshot());
+
+  if (reportNativeValidationFailures()) return;
 
   const modelKey = modelSelect.value;
   const prompt = promptInput.value.trim();
@@ -1172,6 +1258,7 @@ editForm.addEventListener("submit", async (event) => {
 
   const promptOptional = modelKey === "restore-photo" || modelKey === "remove-bg";
   if (!prompt && !promptOptional) {
+    debugLog("Abbruch: Prompt fehlt");
     setStatus("Bitte gib einen Prompt ein.", "error");
     return;
   }
@@ -1183,24 +1270,38 @@ editForm.addEventListener("submit", async (event) => {
       .filter((inp) => inp && inp.files && inp.files[0])
       .map((inp) => inp.files[0]);
     const maxImages = getEditModelImageLimit(modelKey);
+    debugLog("Edit-Modus Dateien", { count: files.length, maxImages, files: files.map((f) => f.name) });
     if (files.length === 0) {
-      setStatus("Bitte lade mindestens Bild 1 hoch.", "error");
+      const slots = getSlotFilesSummary();
+      const hasPreviewOnly = slots.some((s) => s.hasPreview && !s.filesLength);
+      debugLog("Abbruch: Keine Datei im Input", { slots, hasPreviewOnly });
+      setStatus(
+        hasPreviewOnly
+          ? "Vorschau sichtbar, aber Datei nicht im Upload-Feld – bitte Bild erneut wählen oder Set/Upload neu laden."
+          : "Bitte lade mindestens Bild 1 hoch.",
+        "error"
+      );
       return;
     }
     if (files.length > maxImages) {
       const label = maxImages === 1 ? "dieses Modell" : "dieses Modell";
+      debugLog("Abbruch: Zu viele Bilder", { count: files.length, maxImages });
       setStatus(`Für ${label} sind maximal ${maxImages} Bild(er) erlaubt.`, "error");
       return;
     }
+  } else {
+    debugLog("Generate-Modus (Upload-Slots werden nicht gesendet)");
   }
 
   submitButton.disabled = true;
   const modelLabel = getModelLabel(modelKey);
 
-  setStatus("", "loading");
+  setStatus("Anfrage läuft …", "loading");
 
   try {
     let response;
+    const apiPath = effectiveMode === "edit" ? "/api/edit" : "/api/generate";
+    debugLog(`POST ${apiPath}`, { modelKey, promptLength: prompt.length, resolution, aspectRatio });
 
     if (effectiveMode === "edit") {
       const formData = new FormData();
@@ -1215,6 +1316,7 @@ editForm.addEventListener("submit", async (event) => {
 
       response = await fetch("/api/edit", {
         method: "POST",
+        credentials: "include",
         body: formData,
       });
     } else {
@@ -1222,6 +1324,7 @@ editForm.addEventListener("submit", async (event) => {
 
       response = await fetch("/api/generate", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -1235,16 +1338,24 @@ editForm.addEventListener("submit", async (event) => {
       });
     }
 
+    debugLog(`Antwort ${apiPath}`, { status: response.status, ok: response.ok });
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      debugLog("API-Fehler", errorData);
       const message =
         errorData.error ||
-        `${modelLabel}: Der fal.ai-Aufruf ist fehlgeschlagen. Versuche es erneut.`;
+        `${modelLabel}: Der fal.ai-Aufruf ist fehlgeschlagen (HTTP ${response.status}).`;
       setStatus(message, "error");
       return;
     }
 
     const data = await response.json();
+    debugLog("API-Erfolg", {
+      images: (data.images || []).length,
+      request_id: data.request_id,
+      elapsed_ms: data.elapsed_ms,
+    });
     const images = data.images || [];
 
     if (!images.length) {
@@ -1312,13 +1423,19 @@ editForm.addEventListener("submit", async (event) => {
     setStatus("", "success");
   } catch (err) {
     console.error(err);
+    debugLog("Unerwarteter Fehler", { message: err.message, stack: err.stack });
     setStatus("Unerwarteter Fehler: " + err.message, "error");
   } finally {
     submitButton.disabled = false;
   }
 });
 
+submitButton?.addEventListener("click", () => {
+  debugLog("Submit-Button geklickt", getFormDebugSnapshot());
+});
+
 function init() {
+  initDebugPanel();
   setupUploadPreviews();
   setupUploadLibraryPicker();
   setupSelfieCapture();

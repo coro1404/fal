@@ -15,6 +15,12 @@ dotenv.config();
 const FAL_KEY = process.env.FAL_KEY;
 const APP_PASSWORD = process.env.APP_PASSWORD || "changeme";
 const PORT = process.env.PORT || 3321;
+const FALAI_DEBUG = process.env.FALAI_DEBUG === "1" || process.env.NODE_ENV === "development";
+
+function debugServer(label, data) {
+  if (!FALAI_DEBUG) return;
+  console.log(`[falai:server] ${label}`, data ?? "");
+}
 
 if (!FAL_KEY) {
   console.warn(
@@ -1068,6 +1074,14 @@ app.post(
         modelKey = "nano-banana-edit",
       } = req.body || {};
 
+      debugServer("POST /api/edit", {
+        modelKey,
+        promptLength: typeof prompt === "string" ? prompt.length : 0,
+        fileCount: Array.isArray(req.files) ? req.files.length : 0,
+        aspectRatio,
+        resolution,
+      });
+
       const promptOptional = modelKey === "restore-photo" || modelKey === "remove-bg";
       if (!prompt && !promptOptional) {
         return res.status(400).json({ error: "Prompt ist erforderlich." });
@@ -1342,6 +1356,14 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
       numImages = 1,
       modelKey = "nano-banana-t2i",
     } = req.body || {};
+
+    debugServer("POST /api/generate", {
+      modelKey,
+      promptLength: typeof prompt === "string" ? prompt.length : 0,
+      aspectRatio,
+      resolution,
+      numImages,
+    });
 
     if (!prompt) {
       return res.status(400).json({ error: "Prompt ist erforderlich." });

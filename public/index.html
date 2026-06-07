@@ -43,7 +43,7 @@
         <section id="editor-section" class="card hidden">
           <h2>Bild bearbeiten</h2>
 
-          <form id="edit-form" class="form" enctype="multipart/form-data">
+          <form id="edit-form" class="form" enctype="multipart/form-data" novalidate>
             <label class="field">
               <span>Modell</span>
               <select id="model-select">
@@ -162,68 +162,6 @@
               </div>
             </div>
 
-            <div id="selfie-modal" class="selfie-modal hidden" role="dialog" aria-modal="true" aria-labelledby="selfie-modal-title">
-              <div class="selfie-modal-inner">
-                <h3 id="selfie-modal-title" class="selfie-modal-title">Selfie aufnehmen</h3>
-                <video id="selfie-video" class="selfie-video" autoplay playsinline muted aria-hidden="true"></video>
-                <p id="selfie-error" class="selfie-error hidden" aria-live="polite"></p>
-                <div class="selfie-modal-actions">
-                  <button type="button" class="btn selfie-capture-btn" id="selfie-capture-btn">Foto aufnehmen</button>
-                  <button type="button" class="btn selfie-cancel-btn" id="selfie-cancel-btn">Abbrechen</button>
-                </div>
-              </div>
-            </div>
-
-            <div id="save-set-modal" class="selfie-modal hidden" role="dialog" aria-modal="true" aria-labelledby="save-set-modal-title">
-              <div class="selfie-modal-inner">
-                <h3 id="save-set-modal-title" class="selfie-modal-title">Set speichern</h3>
-                <p class="hint">Speichert den aktuellen Prompt und alle Bilder in den Slots 1–3 dauerhaft auf dem Server.</p>
-                <label class="field">
-                  <span>Name des Sets</span>
-                  <input
-                    type="text"
-                    id="save-set-name-input"
-                    maxlength="120"
-                    placeholder="z. B. Portrait-Retusche"
-                    autocomplete="off"
-                    required
-                  />
-                </label>
-                <p id="save-set-error" class="error-message hidden" aria-live="polite"></p>
-                <div class="selfie-modal-actions">
-                  <button type="button" class="btn primary" id="save-set-confirm-btn">Speichern</button>
-                  <button type="button" class="btn selfie-cancel-btn" id="save-set-cancel-btn">Abbrechen</button>
-                </div>
-              </div>
-            </div>
-
-            <div id="upload-library-modal" class="selfie-modal hidden" role="dialog" aria-modal="true" aria-labelledby="upload-library-title">
-              <div class="selfie-modal-inner upload-library-inner">
-                <h3 id="upload-library-title" class="selfie-modal-title">Upload-Bibliothek</h3>
-                <p class="hint">Alle gespeicherten Uploads. Tippe ein Bild an, um es in den naechsten freien Slot zu uebernehmen.</p>
-                <label class="field upload-library-search-field">
-                  <span>Dateiname suchen</span>
-                  <input
-                    type="search"
-                    id="upload-library-search-input"
-                    placeholder="z. B. selfie, portrait, bild-01"
-                    autocomplete="off"
-                  />
-                </label>
-                <label class="field upload-library-sort-field">
-                  <span>Sortierung</span>
-                  <select id="upload-library-sort-select" aria-label="Sortierung der Upload-Bibliothek">
-                    <option value="newest">Neueste zuerst</option>
-                    <option value="name-asc">Name A-Z</option>
-                  </select>
-                </label>
-                <div id="upload-library-list" class="upload-library-list" aria-label="Gespeicherte Uploads"></div>
-                <div class="selfie-modal-actions">
-                  <button type="button" class="btn selfie-cancel-btn" id="upload-library-close-btn">Schliessen</button>
-                </div>
-              </div>
-            </div>
-
             <div class="field-group">
               <label class="field">
                 <span>Auflösung</span>
@@ -267,7 +205,74 @@
               <span id="status-text"></span>
               <span class="status-spinner" aria-hidden="true"></span>
             </p>
+
+            <details id="debug-panel" class="debug-panel hidden">
+              <summary>Debug-Log</summary>
+              <p class="hint">Aktivieren: <code>?debug=1</code> in der URL oder <code>localStorage.setItem('falai-debug','1')</code></p>
+              <pre id="debug-log" class="debug-log" aria-live="polite"></pre>
+            </details>
           </form>
+
+          <div id="selfie-modal" class="selfie-modal hidden" role="dialog" aria-modal="true" aria-labelledby="selfie-modal-title">
+            <div class="selfie-modal-inner">
+              <h3 id="selfie-modal-title" class="selfie-modal-title">Selfie aufnehmen</h3>
+              <video id="selfie-video" class="selfie-video" autoplay playsinline muted aria-hidden="true"></video>
+              <p id="selfie-error" class="selfie-error hidden" aria-live="polite"></p>
+              <div class="selfie-modal-actions">
+                <button type="button" class="btn selfie-capture-btn" id="selfie-capture-btn">Foto aufnehmen</button>
+                <button type="button" class="btn selfie-cancel-btn" id="selfie-cancel-btn">Abbrechen</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="save-set-modal" class="selfie-modal hidden" role="dialog" aria-modal="true" aria-labelledby="save-set-modal-title">
+            <div class="selfie-modal-inner">
+              <h3 id="save-set-modal-title" class="selfie-modal-title">Set speichern</h3>
+              <p class="hint">Speichert den aktuellen Prompt und alle Bilder in den Slots 1–3 dauerhaft auf dem Server.</p>
+              <label class="field">
+                <span>Name des Sets</span>
+                <input
+                  type="text"
+                  id="save-set-name-input"
+                  maxlength="120"
+                  placeholder="z. B. Portrait-Retusche"
+                  autocomplete="off"
+                />
+              </label>
+              <p id="save-set-error" class="error-message hidden" aria-live="polite"></p>
+              <div class="selfie-modal-actions">
+                <button type="button" class="btn primary" id="save-set-confirm-btn">Speichern</button>
+                <button type="button" class="btn selfie-cancel-btn" id="save-set-cancel-btn">Abbrechen</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="upload-library-modal" class="selfie-modal hidden" role="dialog" aria-modal="true" aria-labelledby="upload-library-title">
+            <div class="selfie-modal-inner upload-library-inner">
+              <h3 id="upload-library-title" class="selfie-modal-title">Upload-Bibliothek</h3>
+              <p class="hint">Alle gespeicherten Uploads. Tippe ein Bild an, um es in den naechsten freien Slot zu uebernehmen.</p>
+              <label class="field upload-library-search-field">
+                <span>Dateiname suchen</span>
+                <input
+                  type="search"
+                  id="upload-library-search-input"
+                  placeholder="z. B. selfie, portrait, bild-01"
+                  autocomplete="off"
+                />
+              </label>
+              <label class="field upload-library-sort-field">
+                <span>Sortierung</span>
+                <select id="upload-library-sort-select" aria-label="Sortierung der Upload-Bibliothek">
+                  <option value="newest">Neueste zuerst</option>
+                  <option value="name-asc">Name A-Z</option>
+                </select>
+              </label>
+              <div id="upload-library-list" class="upload-library-list" aria-label="Gespeicherte Uploads"></div>
+              <div class="selfie-modal-actions">
+                <button type="button" class="btn selfie-cancel-btn" id="upload-library-close-btn">Schliessen</button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section id="results-section" class="card hidden">

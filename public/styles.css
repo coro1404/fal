@@ -215,6 +215,35 @@ textarea:focus {
   color: #bbf7d0;
 }
 
+.debug-panel {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.55);
+  font-size: 0.82rem;
+}
+
+.debug-panel summary {
+  cursor: pointer;
+  color: #93c5fd;
+  user-select: none;
+}
+
+.debug-log {
+  margin: 0.5rem 0 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 0.5rem;
+  border-radius: 0.35rem;
+  background: rgba(0, 0, 0, 0.35);
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .results-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
