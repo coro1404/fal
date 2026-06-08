@@ -115,6 +115,89 @@ function attachThumbHoverPreview(img, previewSrc) {
   img.addEventListener("mousemove", moveThumbHoverPreview);
 }
 
+function hoverUrlWithVersion(baseUrl, version) {
+  if (!baseUrl) return baseUrl;
+  if (version == null) return baseUrl;
+  const sep = baseUrl.includes("?") ? "&" : "?";
+  return `${baseUrl}${sep}v=${encodeURIComponent(String(version))}`;
+}
+
+/** Aktualisiert Miniatur + Hover-URL (serverseitig, eindeutig pro Slot-Inhalt). */
+function applySlotPreviewUrls(slotIndex, thumbUrl, imageUrl) {
+  const preview = getPreviewEl(slotIndex);
+  const img = preview?.querySelector("img");
+  if (!img || !thumbUrl || !imageUrl) return;
+  if (img.src && img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
+  img.src = thumbUrl;
+  attachThumbHoverPreview(img, imageUrl);
+}
+
+async function persistSlotToServer(slotIndex, file, source = "upload") {
+  if (!file) return null;
+  const formData = new FormData();
+  formData.append("image", file);
+  formData.append("source", source);
+  formData.append("filename", file.name || `slot-${slotIndex + 1}.png`);
+  try {
+    const res = await fetch(`/api/upload-slots/${slotIndex}`, {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.slot) {
+      debugLog("Slot-Server-Sync fehlgeschlagen", { slotIndex, error: data.error });
+      return null;
+    }
+    applySlotPreviewUrls(slotIndex, data.slot.thumb_url, data.slot.image_url);
+    debugLog("Slot serverseitig gespeichert", data.slot);
+    return data.slot;
+  } catch (err) {
+    debugLog("Slot-Server-Sync Netzwerkfehler", { slotIndex, message: err.message });
+    return null;
+  }
+}
+
+async function clearSlotOnServer(slotIndex) {
+  try {
+    await fetch(`/api/upload-slots/${slotIndex}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+  } catch {
+    // Slot lokal trotzdem leeren.
+  }
+}
+
+async function restoreUploadSlotsFromServer() {
+  try {
+    const res = await fetch("/api/upload-slots", { credentials: "include" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !Array.isArray(data.slots)) return;
+    clearAllPreviews({ skipServer: true });
+    for (let i = 0; i < 3; i++) {
+      const slot = data.slots[i];
+      if (!slot?.image_url) continue;
+      const imgRes = await fetch(slot.image_url, { credentials: "include" });
+      if (!imgRes.ok) continue;
+      const blob = await imgRes.blob();
+      const ext = blob.type?.split("/")[1] || "png";
+      const fileName = slot.filename || `slot-${i + 1}.${ext}`;
+      const file = new File([blob], fileName, { type: blob.type || "image/png" });
+      const inp = imageInputs[i];
+      if (inp) {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        inp.files = dt.files;
+      }
+      showThumbnail(i, file, slot);
+    }
+    debugLog("Upload-Slots vom Server wiederhergestellt", getSlotFilesSummary());
+  } catch (err) {
+    debugLog("Slot-Wiederherstellung fehlgeschlagen", err.message);
+  }
+}
+
 function showThumbHoverPreview(event) {
   if (thumbHoverScrollBlock) return;
   const img = event.currentTarget;
@@ -235,7 +318,7 @@ function renderRecentRequestsGrid(list) {
           img.src = full;
         });
       }
-      attachThumbHoverPreview(img, full);
+      attachThumbHoverPreview(img, hoverUrlWithVersion(full, entry.at || entry.request_id));
       a.appendChild(img);
       cell.appendChild(a);
     }
@@ -310,7 +393,7 @@ async function putImageInSlotFromRecent(slotIndex, imageMeta) {
     ? imageMeta.filename.trim()
     : fallbackName;
   const file = new File([blob], fileName, { type: blob.type || "image/png" });
-  setSlotFile(slotIndex, file);
+  await setSlotFile(slotIndex, file, "recent");
   return true;
 }
 
@@ -344,7 +427,7 @@ function renderRecentUploadsGrid(list) {
     const img = document.createElement("img");
     img.src = entry.thumb_url || entry.image_url;
     img.alt = "";
-    attachThumbHoverPreview(img, entry.image_url);
+    attachThumbHoverPreview(img, hoverUrlWithVersion(entry.image_url, entry.timestamp || entry.id));
     btn.appendChild(img);
     recentUploadsGrid.appendChild(btn);
   }
@@ -418,7 +501,7 @@ function renderUploadLibraryList(list) {
     thumb.src = entry.thumb_url || entry.image_url;
     thumb.alt = "";
     thumb.className = "upload-library-thumb";
-    attachThumbHoverPreview(thumb, entry.image_url);
+    attachThumbHoverPreview(thumb, hoverUrlWithVersion(entry.image_url, entry.timestamp || entry.id));
 
     const name = document.createElement("span");
     name.className = "upload-library-filename";
@@ -728,7 +811,7 @@ async function loadPromptSet(setId) {
           ? slot.filename.trim()
           : `set-${setId}-slot-${i + 1}.${ext}`;
       const file = new File([blob], fileName, { type: blob.type || "image/png" });
-      setSlotFile(i, file);
+      await setSlotFile(i, file, "set");
     }
 
     selectedSetId = setId;
@@ -874,6 +957,7 @@ function toggleAuthUI(isAuthenticated) {
     fetchPromptHistoryAndRender();
     fetchPromptSetsAndRender();
     refreshRecentUploadsGrid();
+    void restoreUploadSlotsFromServer();
   } else {
     loginSection.classList.remove("hidden");
     editorSection.classList.add("hidden");
@@ -987,7 +1071,7 @@ function syncModeToModel() {
     if (promptInput) promptInput.removeAttribute("required");
     if (promptGroup) promptGroup.classList.remove("hidden");
     if (aspectSelect && aspectSelect.value === "auto") aspectSelect.value = "1:1";
-    clearAllPreviews();
+    clearAllPreviews({ skipServer: true });
     submitButton.textContent = "Bild(er) ändern/erzeugen";
   } else {
     uploadGroup.classList.remove("hidden");
@@ -995,6 +1079,7 @@ function syncModeToModel() {
     applyEditUploadLimit(modelKey);
     if (promptInput) promptInput.removeAttribute("required");
     if (promptGroup) promptGroup.classList.toggle("hidden", promptHidden);
+    void restoreUploadSlotsFromServer();
     submitButton.textContent = "Bild(er) ändern/erzeugen";
   }
 }
@@ -1003,7 +1088,7 @@ function getPreviewEl(slotIndex) {
   return document.getElementById(`preview-${slotIndex + 1}`);
 }
 
-function showThumbnail(slotIndex, file) {
+function showThumbnail(slotIndex, file, serverSlot) {
   const preview = getPreviewEl(slotIndex);
   if (!preview) return;
   preview.innerHTML = "";
@@ -1015,18 +1100,23 @@ function showThumbnail(slotIndex, file) {
     (file.type && file.type.startsWith("image/")) ||
     /\.(jpe?g|png|gif|webp)$/i.test(file.name || "");
   if (!isImage) return;
-  const url = URL.createObjectURL(file);
   const img = document.createElement("img");
-  img.src = url;
   img.alt = `Vorschau Bild ${slotIndex + 1}`;
   img.referrerPolicy = "no-referrer";
-  attachThumbHoverPreview(img, url);
+  if (serverSlot?.thumb_url && serverSlot?.image_url) {
+    img.src = serverSlot.thumb_url;
+    attachThumbHoverPreview(img, serverSlot.image_url);
+  } else {
+    const url = URL.createObjectURL(file);
+    img.src = url;
+    attachThumbHoverPreview(img, url);
+  }
   preview.appendChild(img);
   preview.classList.add("has-thumb");
   if (slot) slot.classList.add("has-file");
 }
 
-function setSlotFile(slotIndex, file) {
+async function setSlotFile(slotIndex, file, source = "upload") {
   const inp = imageInputs[slotIndex];
   if (!inp || !file) return;
   const dt = new DataTransfer();
@@ -1038,14 +1128,16 @@ function setSlotFile(slotIndex, file) {
     size: file.size,
     type: file.type,
     inputFilesLength: inp.files?.length ?? 0,
+    source,
   });
+  await persistSlotToServer(slotIndex, file, source);
 }
 
-function clearPreview(slotIndex) {
+function clearPreview(slotIndex, options = {}) {
   const preview = getPreviewEl(slotIndex);
   if (!preview) return;
   const img = preview.querySelector("img");
-  if (img && img.src) URL.revokeObjectURL(img.src);
+  if (img && img.src && img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
   preview.innerHTML = "";
   preview.classList.remove("has-thumb");
   preview.setAttribute("aria-hidden", "true");
@@ -1053,10 +1145,11 @@ function clearPreview(slotIndex) {
   if (slot) slot.classList.remove("has-file");
   const inp = imageInputs[slotIndex];
   if (inp) inp.value = "";
+  if (!options.skipServer) void clearSlotOnServer(slotIndex);
 }
 
-function clearAllPreviews() {
-  [0, 1, 2].forEach((i) => clearPreview(i));
+function clearAllPreviews(options = {}) {
+  [0, 1, 2].forEach((i) => clearPreview(i, options));
 }
 
 function setupUploadPreviews() {
@@ -1065,7 +1158,7 @@ function setupUploadPreviews() {
     inp.addEventListener("change", async () => {
       const file = inp.files && inp.files[0];
       if (file) {
-        showThumbnail(i, file);
+        await setSlotFile(i, file, "upload");
         await saveUploadedImageToHistory(file);
       }
       else clearPreview(i);
@@ -1183,8 +1276,7 @@ function setupSelfieCapture() {
           return;
         }
         const file = new File([blob], "selfie.png", { type: "image/png" });
-        setSlotFile(slot, file);
-        void saveUploadedImageToHistory(file);
+        void setSlotFile(slot, file, "selfie").then(() => saveUploadedImageToHistory(file));
         closeSelfieModal();
       },
       "image/png",

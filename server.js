@@ -229,6 +229,136 @@ const SETS_FILE = path.join(PROMPT_DATA_DIR, "sets.json");
 const SETS_IMAGE_DIR = path.join(PROMPT_DATA_DIR, "sets");
 const SETS_THUMB_DIR = path.join(PROMPT_DATA_DIR, "sets-thumbs");
 const SETS_MAX = 50;
+const UPLOAD_SLOTS_COUNT = 3;
+const SLOT_STATE_FILE = path.join(PROMPT_DATA_DIR, "slot-state.json");
+const SLOT_HISTORY_FILE = path.join(PROMPT_DATA_DIR, "slot-history.json");
+const SLOT_IMAGE_DIR = path.join(PROMPT_DATA_DIR, "slot-images");
+const SLOT_THUMB_DIR = path.join(PROMPT_DATA_DIR, "slot-thumbs");
+const SLOT_HISTORY_MAX = 300;
+
+function defaultSlotState() {
+  return { slots: [null, null, null] };
+}
+
+function slotImagePath(slotIndex, ext) {
+  return path.join(SLOT_IMAGE_DIR, `slot-${slotIndex}.${ext}`);
+}
+
+function slotThumbPath(slotIndex) {
+  return path.join(SLOT_THUMB_DIR, `slot-${slotIndex}.webp`);
+}
+
+async function readSlotStateFile() {
+  try {
+    const raw = await readFile(SLOT_STATE_FILE, "utf8");
+    const data = JSON.parse(raw);
+    const slots = Array.isArray(data?.slots) ? data.slots : [null, null, null];
+    while (slots.length < UPLOAD_SLOTS_COUNT) slots.push(null);
+    return { slots: slots.slice(0, UPLOAD_SLOTS_COUNT) };
+  } catch (err) {
+    if (err?.code === "ENOENT") return defaultSlotState();
+    console.error("Fehler beim Lesen slot-state.json:", err);
+    return defaultSlotState();
+  }
+}
+
+async function writeSlotStateFile(state) {
+  const dir = path.dirname(SLOT_STATE_FILE);
+  await mkdir(dir, { recursive: true });
+  await writeFile(SLOT_STATE_FILE, JSON.stringify(state, null, 0), "utf8");
+}
+
+async function readSlotHistoryFile() {
+  try {
+    const raw = await readFile(SLOT_HISTORY_FILE, "utf8");
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (err) {
+    if (err?.code === "ENOENT") return [];
+    console.error("Fehler beim Lesen slot-history.json:", err);
+    return [];
+  }
+}
+
+async function writeSlotHistoryFile(arr) {
+  const dir = path.dirname(SLOT_HISTORY_FILE);
+  await mkdir(dir, { recursive: true });
+  await writeFile(SLOT_HISTORY_FILE, JSON.stringify(arr, null, 0), "utf8");
+}
+
+function slotMetaToClientJson(slotIndex, meta) {
+  if (!meta) return null;
+  const version = meta.version || meta.timestamp || Date.now();
+  const q = `v=${encodeURIComponent(String(version))}`;
+  return {
+    slotIndex,
+    version,
+    timestamp: meta.timestamp,
+    source: meta.source || "upload",
+    filename: meta.filename || `slot-${slotIndex + 1}.${meta.ext || "png"}`,
+    image_url: `/api/upload-slots/${slotIndex}?${q}`,
+    thumb_url: `/api/upload-slots/${slotIndex}/thumb?${q}`,
+  };
+}
+
+async function appendSlotHistoryEntry({ slotIndex, meta }) {
+  if (!meta) return;
+  const history = await readSlotHistoryFile();
+  history.unshift({
+    id: `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+    slotIndex,
+    version: meta.version,
+    timestamp: meta.timestamp,
+    source: meta.source,
+    filename: meta.filename,
+    ext: meta.ext,
+  });
+  await writeSlotHistoryFile(history.slice(0, SLOT_HISTORY_MAX));
+}
+
+async function clearSlotFiles(slotIndex) {
+  const state = await readSlotStateFile();
+  const meta = state.slots[slotIndex];
+  if (meta?.ext) {
+    await unlink(slotImagePath(slotIndex, meta.ext)).catch(() => {});
+  }
+  await unlink(slotThumbPath(slotIndex)).catch(() => {});
+}
+
+async function saveSlotImage(slotIndex, buffer, mimeType, source, filename) {
+  const ext = extForMimeType(mimeType);
+  const version = Date.now();
+  const safeName = filename
+    ? filename.replace(/[^a-zA-Z0-9._-]/g, "_")
+    : `slot-${slotIndex + 1}.${ext}`;
+  const meta = {
+    version,
+    timestamp: version,
+    ext,
+    filename: safeName,
+    source: source || "upload",
+  };
+
+  await mkdir(SLOT_IMAGE_DIR, { recursive: true });
+  await mkdir(SLOT_THUMB_DIR, { recursive: true });
+
+  const state = await readSlotStateFile();
+  const prev = state.slots[slotIndex];
+  if (prev?.ext && prev.ext !== ext) {
+    await unlink(slotImagePath(slotIndex, prev.ext)).catch(() => {});
+  }
+
+  await writeFile(slotImagePath(slotIndex, ext), buffer);
+  await sharp(buffer)
+    .resize(288, 288, { fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 80 })
+    .toFile(slotThumbPath(slotIndex));
+
+  state.slots[slotIndex] = meta;
+  await writeSlotStateFile(state);
+  await appendSlotHistoryEntry({ slotIndex, meta });
+  return slotMetaToClientJson(slotIndex, meta);
+}
 
 function safeThumbName(requestId) {
   return String(requestId).replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -871,6 +1001,112 @@ app.get("/api/sets/:id/slots/:slotIndex", authMiddleware, async (req, res) => {
     const mimeType = slot.ext === "jpg" ? "image/jpeg" : `image/${slot.ext}`;
     res.setHeader("Content-Type", mimeType);
     res.setHeader("Cache-Control", "public, max-age=604800");
+    return res.sendFile(path.resolve(filePath));
+  } catch {
+    return res.status(404).end();
+  }
+});
+
+// Upload-Slots: zentraler Server-Zustand pro Slot (sessionübergreifend, Hover-Vorschau)
+app.get("/api/upload-slots", authMiddleware, async (req, res) => {
+  try {
+    const state = await readSlotStateFile();
+    const slots = state.slots.map((meta, i) => slotMetaToClientJson(i, meta));
+    return res.json({ slots });
+  } catch (err) {
+    console.error("Fehler bei GET /api/upload-slots:", err);
+    return res.status(500).json({ error: "Slot-Zustand konnte nicht geladen werden.", slots: [] });
+  }
+});
+
+app.get("/api/upload-slots/history", authMiddleware, async (req, res) => {
+  try {
+    const items = await readSlotHistoryFile();
+    return res.json({ items });
+  } catch (err) {
+    console.error("Fehler bei GET /api/upload-slots/history:", err);
+    return res.status(500).json({ error: "Slot-Historie konnte nicht geladen werden.", items: [] });
+  }
+});
+
+app.post(
+  "/api/upload-slots/:slotIndex",
+  authMiddleware,
+  upload.single("image"),
+  async (req, res) => {
+    try {
+      const slotIndex = parseInt(req.params.slotIndex, 10);
+      if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= UPLOAD_SLOTS_COUNT) {
+        return res.status(400).json({ error: "Ungültiger Slot-Index." });
+      }
+      const raw = req.file;
+      if (!raw) return res.status(400).json({ error: "Bild fehlt." });
+      const mimeType = raw.mimetype || "image/png";
+      if (!String(mimeType).startsWith("image/")) {
+        return res.status(400).json({ error: "Nur Bilddateien sind erlaubt." });
+      }
+      const buffer = raw.buffer ?? (await streamToBuffer(raw.stream));
+      const source = typeof req.body?.source === "string" ? req.body.source.trim() : "upload";
+      const filename = typeof req.body?.filename === "string" ? req.body.filename.trim() : raw.originalname;
+      const slot = await saveSlotImage(slotIndex, buffer, mimeType, source, filename);
+      return res.json({ slot });
+    } catch (err) {
+      console.error("Fehler bei POST /api/upload-slots/:slotIndex:", err);
+      return res.status(500).json({ error: "Slot konnte nicht gespeichert werden." });
+    }
+  }
+);
+
+app.delete("/api/upload-slots/:slotIndex", authMiddleware, async (req, res) => {
+  try {
+    const slotIndex = parseInt(req.params.slotIndex, 10);
+    if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= UPLOAD_SLOTS_COUNT) {
+      return res.status(400).json({ error: "Ungültiger Slot-Index." });
+    }
+    await clearSlotFiles(slotIndex);
+    const state = await readSlotStateFile();
+    state.slots[slotIndex] = null;
+    await writeSlotStateFile(state);
+    const slots = state.slots.map((meta, i) => slotMetaToClientJson(i, meta));
+    return res.json({ slots });
+  } catch (err) {
+    console.error("Fehler bei DELETE /api/upload-slots/:slotIndex:", err);
+    return res.status(500).json({ error: "Slot konnte nicht geleert werden." });
+  }
+});
+
+app.get("/api/upload-slots/:slotIndex/thumb", authMiddleware, async (req, res) => {
+  try {
+    const slotIndex = parseInt(req.params.slotIndex, 10);
+    if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= UPLOAD_SLOTS_COUNT) {
+      return res.status(400).end();
+    }
+    const state = await readSlotStateFile();
+    if (!state.slots[slotIndex]) return res.status(404).end();
+    const filePath = slotThumbPath(slotIndex);
+    await access(filePath);
+    res.setHeader("Content-Type", "image/webp");
+    res.setHeader("Cache-Control", "no-cache");
+    return res.sendFile(path.resolve(filePath));
+  } catch {
+    return res.status(404).end();
+  }
+});
+
+app.get("/api/upload-slots/:slotIndex", authMiddleware, async (req, res) => {
+  try {
+    const slotIndex = parseInt(req.params.slotIndex, 10);
+    if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= UPLOAD_SLOTS_COUNT) {
+      return res.status(400).end();
+    }
+    const state = await readSlotStateFile();
+    const meta = state.slots[slotIndex];
+    if (!meta) return res.status(404).end();
+    const filePath = slotImagePath(slotIndex, meta.ext);
+    await access(filePath);
+    const mimeType = meta.ext === "jpg" ? "image/jpeg" : `image/${meta.ext}`;
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Cache-Control", "no-cache");
     return res.sendFile(path.resolve(filePath));
   } catch {
     return res.status(404).end();

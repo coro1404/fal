@@ -8,3 +8,7 @@ data/recent-uploads-thumbs/*.webp
 data/sets.json
 data/sets/*
 data/sets-thumbs/*
+data/slot-state.json
+data/slot-history.json
+data/slot-images/*
+data/slot-thumbs/*
