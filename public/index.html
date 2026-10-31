@@ -6,18 +6,18 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <title>Nano Banana Pro Image Edit</title>
+    <title>fal.ai Image Edit</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
-    <div id="app">
-      <header class="app-header">
-        <h1>Nano Banana Pro</h1>
-        <p class="subtitle">Einfache Bildbearbeitung, optimiert für Mobilgeräte</p>
+  <body class="min-h-full">
+    <div id="app" class="mx-auto flex min-h-screen max-w-160 flex-col p-5 md:max-w-180 md:p-7">
+      <header class="app-header mb-5 text-center">
+        <h1 class="m-0 text-2xl tracking-wide md:text-3xl">fal.ai Image Studio</h1>
+        <p class="subtitle mt-1 text-sm text-app-muted">Bildbearbeitung &amp; Text-zu-Bild, mobil-first</p>
         <p id="fal-balance" class="fal-balance" aria-live="polite"></p>
       </header>
 
-      <main class="app-main">
+      <main class="app-main flex flex-1 flex-col gap-4">
         <section id="login-section" class="card">
           <h2>Anmeldung</h2>
           <p class="hint">
@@ -49,19 +49,14 @@
               <select id="model-select">
                 <option value="nano-banana-edit">Nano Banana Pro (Edit)</option>
                 <option value="nano-banana-t2i">Nano Banana Pro (Text-zu-Bild)</option>
-                <option value="nano-banana-2-edit">Nano Banana 2 (Edit)</option>
-                <option value="nano-banana-2-t2i">Nano Banana 2 (Text-zu-Bild)</option>
-                <option value="flux2-dev-t2i">Flux 2 [dev] (Text-zu-Bild)</option>
-                <option value="flux2-pro-t2i">Flux 2 Pro (Text-zu-Bild)</option>
-                <option value="flux2-edit">Flux 2 Turbo (Edit)</option>
-                <option value="flux2-pro-edit">Flux 2 Pro (Edit)</option>
-                <option value="flux-pro-kontext">FLUX.1 Kontext [pro] (Edit)</option>
-                <option value="gpt-image-edit">GPT-Image 1.5 (Edit)</option>
-                <option value="gpt-image-mini">GPT-Image 1 Mini (Text-zu-Bild)</option>
-                <option value="gpt-image-2-edit">GPT-Image 2 (Edit)</option>
-                <option value="gpt-image-2-t2i">GPT-Image 2 (Text-zu-Bild)</option>
-                <option value="grok-imagine-edit">Grok Imagine Image (Edit)</option>
-                <option value="grok-imagine-t2i">Grok Imagine Image (Text-zu-Bild)</option>
+                <option value="nano-banana-2-edit">Nano Banana 2.1 (Edit)</option>
+                <option value="nano-banana-2-t2i">Nano Banana 2.1 (Text-zu-Bild)</option>
+                <option value="flux3-edit">FLUX 3 (Edit)</option>
+                <option value="flux3-t2i">FLUX 3 (Text-zu-Bild)</option>
+                <option value="gpt-image-edit">GPT Image 2.5 Sunburst (Edit)</option>
+                <option value="gpt-image-t2i">GPT Image 2.5 Sunburst (Text-zu-Bild)</option>
+                <option value="grok-imagine-edit">Grok Imagine 2.0 (Edit)</option>
+                <option value="grok-imagine-t2i">Grok Imagine 2.0 (Text-zu-Bild)</option>
                 <option value="remove-bg">Objekt/Background entfernen</option>
                 <option value="restore-photo">Historische Fotos restaurieren</option>
               </select>

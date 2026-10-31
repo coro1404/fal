@@ -50,7 +50,7 @@ async function streamToBuffer(stream) {
 }
 
 const MODEL_MAP = {
-  // Nano Banana
+  // Nano Banana Pro (Gemini 3 Pro Image)
   "nano-banana-edit": {
     endpoint: "fal-ai/nano-banana-pro/edit",
     type: "edit",
@@ -59,61 +59,40 @@ const MODEL_MAP = {
     endpoint: "fal-ai/nano-banana-pro",
     type: "generate",
   },
-  // Nano Banana 2
+  // Nano Banana 2.1 (Flash)
   "nano-banana-2-edit": {
-    endpoint: "fal-ai/nano-banana-2/edit",
+    endpoint: "google/nano-banana-2.1/edit",
     type: "edit",
   },
   "nano-banana-2-t2i": {
-    endpoint: "fal-ai/nano-banana-2",
+    endpoint: "google/nano-banana-2.1",
     type: "generate",
   },
-  // Flux 2
-  "flux2-edit": {
-    endpoint: "fal-ai/flux-2/turbo/edit",
-    type: "edit",
+  // FLUX 3 Image
+  "flux3-edit": {
+    endpoint: "blackforestlabs/flux-3/edit-image",
+    type: "edit-flux3",
   },
-  "flux2-pro-edit": {
-    endpoint: "fal-ai/flux-2-pro/edit",
-    type: "edit",
-  },
-  // FLUX.1 Kontext [pro] (Image-to-Image)
-  "flux-pro-kontext": {
-    endpoint: "fal-ai/flux-pro/kontext",
-    type: "edit-kontext",
-  },
-  "flux2-dev-t2i": {
-    endpoint: "fal-ai/flux-2",
+  "flux3-t2i": {
+    endpoint: "blackforestlabs/flux-3/text-to-image",
     type: "generate",
   },
-  "flux2-pro-t2i": {
-    endpoint: "fal-ai/flux-2-pro",
-    type: "generate",
-  },
-  // GPT-Image
+  // GPT Image 2.5 Sunburst
   "gpt-image-edit": {
-    endpoint: "fal-ai/gpt-image-1.5/edit",
+    endpoint: "openai/gpt-image-2.5/sunburst/edit",
     type: "edit",
   },
-  "gpt-image-mini": {
-    endpoint: "fal-ai/gpt-image-1-mini",
+  "gpt-image-t2i": {
+    endpoint: "openai/gpt-image-2.5/sunburst/text-to-image",
     type: "generate",
   },
-  "gpt-image-2-edit": {
-    endpoint: "fal-ai/gpt-image-2/edit",
-    type: "edit",
-  },
-  "gpt-image-2-t2i": {
-    endpoint: "fal-ai/gpt-image-2",
-    type: "generate",
-  },
-  // Grok Imagine Image (xAI)
+  // Grok Imagine Image 2.0 (xAI)
   "grok-imagine-edit": {
-    endpoint: "xai/grok-imagine-image/edit",
+    endpoint: "xai/grok-imagine-image/v2.0/edit",
     type: "edit-grok",
   },
   "grok-imagine-t2i": {
-    endpoint: "xai/grok-imagine-image",
+    endpoint: "xai/grok-imagine-image/v2.0/text-to-image",
     type: "generate",
   },
   // Spezialisierte Tools
@@ -131,12 +110,9 @@ const MODEL_MAP = {
 const EDIT_MODEL_IMAGE_LIMITS = {
   "nano-banana-edit": { min: 1, max: 3 },
   "nano-banana-2-edit": { min: 1, max: 3 },
-  "flux2-edit": { min: 1, max: 1 },
-  "flux2-pro-edit": { min: 1, max: 1 },
-  "gpt-image-edit": { min: 1, max: 1 },
-  "gpt-image-2-edit": { min: 1, max: 1 },
-  "flux-pro-kontext": { min: 1, max: 1 },
-  "grok-imagine-edit": { min: 1, max: 1 },
+  "flux3-edit": { min: 1, max: 3 },
+  "gpt-image-edit": { min: 1, max: 3 },
+  "grok-imagine-edit": { min: 1, max: 3 },
   "remove-bg": { min: 1, max: 1 },
   "restore-photo": { min: 1, max: 1 },
 };
@@ -184,24 +160,27 @@ async function enrichImageMeta(images) {
 
 /** Geschätzte Kosten in USD pro Bild (fal.ai, Stand Orientierung). */
 const PRICING_USD = {
-  "nano-banana-edit": 0.04,
-  "nano-banana-t2i": 0.04,
-  "nano-banana-2-edit": 0.08,
-  "nano-banana-2-t2i": 0.08,
-  "flux2-edit": 0.04,
-  "flux2-pro-edit": 0.05,
-   "flux-pro-kontext": 0.04,
-  "flux2-dev-t2i": 0.04,
-  "flux2-pro-t2i": 0.04,
-  "gpt-image-edit": 0.05,
-  "gpt-image-mini": 0.05,
-  "gpt-image-2-edit": 0.07,
-  "gpt-image-2-t2i": 0.07,
+  "nano-banana-edit": 0.15,
+  "nano-banana-t2i": 0.15,
+  "nano-banana-2-edit": 0.044,
+  "nano-banana-2-t2i": 0.04,
+  "flux3-edit": 0.05,
+  "flux3-t2i": 0.05,
+  "gpt-image-edit": 0.055,
+  "gpt-image-t2i": 0.055,
   "grok-imagine-edit": 0.022,
   "grok-imagine-t2i": 0.02,
   "remove-bg": 0.02,
   "restore-photo": 0.02,
 };
+
+/** Mappt UI-Auflösung (1K/2K/4K) auf Flux-3-/Grok-Enums. */
+function mapLowerResolution(resolution, { allow4k = true } = {}) {
+  const key = String(resolution || "1K").toUpperCase();
+  if (key === "4K") return allow4k ? "4k" : "2k";
+  if (key === "2K") return "2k";
+  return "1k";
+}
 
 // Simple In-Memory-Sessionverwaltung
 const sessions = new Map();
@@ -1189,10 +1168,7 @@ function extractPromptFromPayload(jsonInput) {
 async function fetchRecentRequestsFromFalPlatform() {
   if (!FAL_KEY) return [];
   const endpoints = [
-    ...new Set([
-      ...Object.values(MODEL_MAP).map((m) => m.endpoint),
-      "fal-ai/flux-lora",
-    ]),
+    ...new Set(Object.values(MODEL_MAP).map((m) => m.endpoint)),
   ];
   const limitPerEndpoint = 20;
   const allItems = [];
@@ -1362,22 +1338,18 @@ app.post(
           num_images: 1,
         };
 
-        if (modelKey === "flux2-pro-edit") {
-          editInput.image_size = "auto";
-          editInput.safety_tolerance = "5";
-          editInput.enable_safety_checker = false;
-        } else if (modelKey === "gpt-image-edit" || modelKey === "gpt-image-2-edit") {
-          // GPT-Image Edit-Modelle: eigene Parameter, kein aspect_ratio/resolution.
+        if (modelKey === "gpt-image-edit") {
+          // GPT Image 2.5 Edit: image_size/quality statt aspect_ratio/resolution.
           editInput.image_size = "auto";
           editInput.background = "auto";
           editInput.quality = "high";
-          editInput.input_fidelity = "high";
         } else {
           editInput.aspect_ratio = aspectRatio;
           editInput.resolution = resolution;
-          if (modelKey === "nano-banana-edit" || modelKey === "nano-banana-2-edit") editInput.safety_tolerance = "6";
-          if (modelKey === "nano-banana-edit" || modelKey === "nano-banana-2-edit") editInput.enable_web_search = true;
-          if (modelKey === "flux2-edit") editInput.enable_safety_checker = false;
+          if (modelKey === "nano-banana-edit" || modelKey === "nano-banana-2-edit") {
+            editInput.safety_tolerance = "6";
+            editInput.enable_web_search = true;
+          }
         }
 
         const result = await fal.subscribe(model.endpoint, {
@@ -1407,20 +1379,21 @@ app.post(
         });
       }
 
-      if (model.type === "edit-kontext") {
-        // FLUX.1 Kontext [pro] erwartet genau ein Bild (image_url) plus Prompt.
-        const file = files[0];
-        const base64 = file.buffer.toString("base64");
-        const imageUrl = `data:${file.mimetype};base64,${base64}`;
+      if (model.type === "edit-flux3") {
+        const imageUrls = files.map((file) => {
+          const base64 = file.buffer.toString("base64");
+          return `data:${file.mimetype};base64,${base64}`;
+        });
 
         const t0 = Date.now();
         const result = await fal.subscribe(model.endpoint, {
           input: {
             prompt,
-            image_url: imageUrl,
-            output_format: outputFormat,
-            num_images: 1,
-            safety_tolerance: "6",
+            image_urls: imageUrls,
+            aspect_ratio: aspectRatio || "auto",
+            resolution: mapLowerResolution(resolution, { allow4k: true }),
+            output_format: outputFormat === "png" ? "png" : "jpeg",
+            safety_tolerance: 4,
           },
           logs: false,
         });
@@ -1428,7 +1401,7 @@ app.post(
 
         const { images: raw = [] } = result.data || {};
         const images = await enrichImageMeta(raw);
-        const costUsd = (PRICING_USD[modelKey] ?? 0.04) * (images.length || 1);
+        const costUsd = (PRICING_USD[modelKey] ?? 0.05) * (images.length || 1);
 
         await recordRecentRequestEntry({
           request_id: result.requestId ?? result.request_id,
@@ -1439,7 +1412,7 @@ app.post(
 
         return res.json({
           images,
-          description: "Bearbeitung mit FLUX.1 Kontext [pro].",
+          description: "Bearbeitung mit FLUX 3 Image.",
           cost_estimate_usd: Math.round(costUsd * 10000) / 10000,
           elapsed_ms,
           request_id: result.requestId ?? result.request_id,
@@ -1448,17 +1421,20 @@ app.post(
       }
 
       if (model.type === "edit-grok") {
-        // Grok Imagine Image Edit: ein Bild (image_url) plus Prompt.
-        const file = files[0];
-        const base64 = file.buffer.toString("base64");
-        const imageUrl = `data:${file.mimetype};base64,${base64}`;
+        // Grok Imagine Image 2.0 Edit: bis zu 5 Bilder via image_urls.
+        const imageUrls = files.map((file) => {
+          const base64 = file.buffer.toString("base64");
+          return `data:${file.mimetype};base64,${base64}`;
+        });
 
         const t0 = Date.now();
         const result = await fal.subscribe(model.endpoint, {
           input: {
             prompt,
-            image_url: imageUrl,
+            image_urls: imageUrls,
             num_images: 1,
+            aspect_ratio: aspectRatio || "auto",
+            resolution: mapLowerResolution(resolution, { allow4k: false }),
             output_format: outputFormat || "jpeg",
           },
           logs: false,
@@ -1478,7 +1454,7 @@ app.post(
 
         return res.json({
           images,
-          description: revisedPrompt || "Bearbeitung mit Grok Imagine Image.",
+          description: revisedPrompt || "Bearbeitung mit Grok Imagine Image 2.0.",
           cost_estimate_usd: Math.round(costUsd * 10000) / 10000,
           elapsed_ms,
           request_id: result.requestId ?? result.request_id,
@@ -1578,8 +1554,14 @@ app.post(
   }
 );
 
-// Gültige aspect_ratio für Text-zu-Bild (fal.ai nano-banana-pro etc.); "auto" ist nur für Edit.
+// Gültige aspect_ratio für Text-zu-Bild; "auto" ist nur für Edit.
 const T2I_ASPECT_RATIOS = new Set(["21:9", "16:9", "3:2", "4:3", "5:4", "1:1", "4:5", "3:4", "2:3", "9:16"]);
+const GROK_T2I_ASPECT_RATIOS = new Set([
+  "2:1", "20:9", "19.5:9", "16:9", "4:3", "3:2", "1:1", "2:3", "3:4", "9:16", "9:19.5", "9:20", "1:2", "21:9", "5:2",
+]);
+const FLUX3_T2I_ASPECT_RATIOS = new Set([
+  "21:9", "2:1", "16:9", "3:2", "7:5", "4:3", "5:4", "1:1", "4:5", "3:4", "5:7", "2:3", "9:16", "1:2",
+]);
 
 // Optional: Text-zu-Bild-Modell
 app.post("/api/generate", authMiddleware, async (req, res) => {
@@ -1620,25 +1602,33 @@ app.post("/api/generate", authMiddleware, async (req, res) => {
 
     const genInput = {
       prompt,
-      aspect_ratio,
-      resolution: resolutionValue,
-      output_format: outputFormat || "png",
       num_images: Math.min(Number(numImages) || 1, 4),
     };
+
     if (modelKey === "nano-banana-t2i" || modelKey === "nano-banana-2-t2i") {
+      genInput.aspect_ratio = aspect_ratio;
+      genInput.resolution = resolutionValue;
+      genInput.output_format = outputFormat || "png";
       genInput.safety_tolerance = "6";
       genInput.enable_web_search = true;
-    }
-    if (modelKey === "flux2-dev-t2i") genInput.enable_safety_checker = false;
-    if (modelKey === "flux2-pro-t2i") {
-      genInput.safety_tolerance = "5";
-      genInput.enable_safety_checker = false;
-    }
-    if (modelKey === "grok-imagine-t2i") {
-      delete genInput.resolution;
-      const grokAspectRatios = new Set(["2:1", "20:9", "19.5:9", "16:9", "4:3", "3:2", "1:1", "2:3", "3:4", "9:16", "9:19.5", "9:20", "1:2"]);
-      if (!grokAspectRatios.has(aspect_ratio)) genInput.aspect_ratio = "1:1";
+    } else if (modelKey === "flux3-t2i") {
+      genInput.aspect_ratio = FLUX3_T2I_ASPECT_RATIOS.has(aspect_ratio) ? aspect_ratio : "1:1";
+      genInput.resolution = mapLowerResolution(resolutionValue, { allow4k: true });
+      genInput.output_format = outputFormat === "png" ? "png" : "jpeg";
+      genInput.safety_tolerance = 4;
+    } else if (modelKey === "gpt-image-t2i") {
+      genInput.image_size = "auto";
+      genInput.background = "auto";
+      genInput.quality = "high";
+      genInput.output_format = outputFormat || "png";
+    } else if (modelKey === "grok-imagine-t2i") {
+      genInput.aspect_ratio = GROK_T2I_ASPECT_RATIOS.has(aspect_ratio) ? aspect_ratio : "1:1";
+      genInput.resolution = mapLowerResolution(resolutionValue, { allow4k: false });
       genInput.output_format = outputFormat || "jpeg";
+    } else {
+      genInput.aspect_ratio = aspect_ratio;
+      genInput.resolution = resolutionValue;
+      genInput.output_format = outputFormat || "png";
     }
 
     const t0 = Date.now();

@@ -1,22 +1,28 @@
 {
   "name": "falai-nano-banana-pro-webapp",
   "version": "1.0.0",
-  "description": "Einfache mobile-first Web-App zur Bildbearbeitung mit fal.ai Nano Banana Pro.",
+  "description": "Einfache mobile-first Web-App zur Bildbearbeitung mit fal.ai.",
   "main": "server.js",
   "type": "module",
   "engines": {
     "node": ">=24.0.0"
   },
   "scripts": {
+    "build:css": "tailwindcss -i ./src/styles.css -o ./public/styles.css",
     "start": "node server.js",
-    "dev": "NODE_ENV=development node server.js"
+    "dev": "npm run build:css && NODE_ENV=development node server.js",
+    "dev:css": "tailwindcss -i ./src/styles.css -o ./public/styles.css --watch"
   },
   "dependencies": {
     "@fal-ai/client": "^1.10.1",
     "cookie-parser": "^1.4.7",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "multer": "^2.1.1",
-    "sharp": "^0.34.5"
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "multer": "^2.5.0",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "tailwindcss": "^4.3.3"
   }
 }

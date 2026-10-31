@@ -1,6 +1,6 @@
 # fal.ai Bildbearbeitungs-Webapp
 
-Eine mobile-first Web-Anwendung zur **Bildbearbeitung und Text-zu-Bild-Generierung** über die [fal.ai](https://fal.ai)-API. Die App bündelt mehrere fal.ai-Modelle in einer einfachen Oberfläche: Bild-zu-Bild-Edits (1–3 Uploads), Text-zu-Bild, Objekt-/Hintergrund-Entfernung und Foto-Restaurierung. Sie läuft als Node.js-Express-Server, optional in Docker, und ist mit einem einfachen Passwort geschützt.
+Eine mobile-first Web-Anwendung zur **Bildbearbeitung und Text-zu-Bild-Generierung** über die [fal.ai](https://fal.ai)-API. Die App bündelt die aktuellen fal.ai-Modelle in einer einfachen Oberfläche: Bild-zu-Bild-Edits (1–3 Uploads), Text-zu-Bild, Objekt-/Hintergrund-Entfernung und Foto-Restaurierung. Sie läuft als Node.js-Express-Server, wird **über Docker Compose** betrieben und ist mit einem einfachen Passwort geschützt.
 
 ---
 
@@ -14,54 +14,51 @@ Eine mobile-first Web-Anwendung zur **Bildbearbeitung und Text-zu-Bild-Generieru
 - [Konfiguration](#konfiguration)
 - [Lokaler Start](#lokaler-start)
 - [Docker](#docker)
+- [Remote-Deployment (Docker Compose)](#remote-deployment-docker-compose)
 - [API-Überblick](#api-überblick)
 
 ---
 
 ## Features
 
-- **Mobile-first UI**: Einspaltiges, touch-freundliches Layout für Smartphones und Desktop.
-- **Modellauswahl**: Ein Dropdown wählt zwischen allen unterstützten Modellen (Edit, Text-zu-Bild, Spezial-Tools).
+- **Mobile-first UI**: Einspaltiges, touch-freundliches Layout für Smartphones und Desktop (Tailwind CSS v4).
+- **Modellauswahl**: Ein Dropdown wählt zwischen allen unterstützten Modellen (Edit, Text-zu-Bild, Spezial-Tools). Pro Modellfamilie ist jeweils nur die **neueste** fal.ai-Version eingebunden.
 - **Bild-zu-Bild (Edit)**:
   - Upload von 1–3 Bildern, Prompt, optional Auflösung (1K/2K/4K) und Seitenverhältnis.
-  - Unterstützte Edit-Modelle: Nano Banana Pro, **Nano Banana 2**, Flux 2 Turbo/Pro, FLUX.1 Kontext [pro], GPT-Image 1.5, GPT-Image 2, Grok Imagine Image, Objekt entfernen, Foto-Restaurierung.
-- **Text-zu-Bild**: Prompt, Seitenverhältnis, Anzahl Ausgaben (1–4); Modelle z. B. Nano Banana Pro, **Nano Banana 2**, Flux 2 [dev]/Pro, GPT-Image 1 Mini, GPT-Image 2, Grok Imagine Image.
+  - Edit-Modelle: **Nano Banana Pro**, **Nano Banana 2.1**, **FLUX 3**, **GPT Image 2.5 Sunburst**, **Grok Imagine 2.0**, Objekt entfernen, Foto-Restaurierung.
+- **Text-zu-Bild**: Prompt, Seitenverhältnis, Anzahl Ausgaben (1–4); Modelle: Nano Banana Pro, Nano Banana 2.1, FLUX 3, GPT Image 2.5 Sunburst, Grok Imagine 2.0.
 - **Selfie-Aufnahme**: Optional Bild direkt aus der Kamera aufnehmen und in einen Upload-Slot übernehmen.
 - **Prompt-Historie**: Die letzten 25 verwendeten Prompts werden **serverseitig** in `data/prompt-history.json` gespeichert. Session- und geräteübergreifend: gleiche Historie für alle Nutzer/Sessions; Auswahlbox mit Datum/Uhrzeit, Übernahme in das Prompt-Feld bei Auswahl. **Identische Prompts** (exakt gleicher Text nach Trim) werden nicht erneut eingetragen – bestehender Eintrag bleibt unverändert.
-- **Letzte Uploads (3 Miniaturen)**: Die letzten 3 hochgeladenen Bilder werden **persistent serverseitig** gespeichert und als Miniatur-Buttons unter den Upload-Slots angezeigt. Ein Klick übernimmt ein gespeichertes Bild in den nächsten freien Slot und verwendet es im nächsten Edit-Request wie ein normal hochgeladenes Bild.
+- **Gespeicherte Sets**: Prompt und Slot-Bilder dauerhaft speichern/laden.
+- **Letzte Uploads (3 Miniaturen)**: Die letzten 3 hochgeladenen Bilder werden **persistent serverseitig** gespeichert und als Miniatur-Buttons unter den Upload-Slots angezeigt. Ein Klick übernimmt ein gespeichertes Bild in den nächsten freien Slot.
 - **Ergebnis**: Anzeige der generierten Bilder mit Auflösung/Größe/Kodierung, Download-Link (über Download-Proxy) und geschätzter Kostenhinweis.
-- **Letzte Requests (3×3-Raster)**: Chronologisch die **letzten 9 Requests über alle Modelle** hinweg, persistent in `data/recent-requests.json` (gleicher Speicherort wie die Prompt-Historie / Docker-Volume). Nach Reload oder Container-Neustart lädt die App die gespeicherte Liste; bei Login wird optional per **POST `/api/recent-requests/sync`** mit der fal.ai-Platform-Historie abgeglichen (Web/API). Klick auf ein Miniaturbild öffnet den Playground; bekannte Prompts werden in die Zwischenablage kopiert.
-- **Vorschaubilder (Thumbnails)**: Für das Raster speichert der Server kleine **WebP**-Dateien (max. Kantenlänge 288 px) unter **`data/thumbnails/`** (bzw. `$FAL_DATA_DIR/thumbnails`). Sie werden beim Anlegen/Aktualisieren der Recent-Requests aus der jeweiligen Ergebnis-URL geladen und über **GET `/api/recent-thumbnails/:requestId`** ausgeliefert (mit Cache-Header). Die Oberfläche lädt zuerst diese URL und fällt bei Fehler (z. B. Datei noch nicht erzeugt) auf die Original-**`image_url`** zurück – so entfällt wiederholtes Laden großer CDN-Bilder im Raster.
+- **Letzte Requests (3×3-Raster)**: Chronologisch die **letzten 9 Requests über alle Modelle** hinweg, persistent in `data/recent-requests.json`. Nach Reload oder Container-Neustart bleibt die Liste erhalten; bei Login optional Sync mit der fal.ai-Platform-Historie (**POST `/api/recent-requests/sync`**).
+- **Vorschaubilder (Thumbnails)**: Kleine **WebP**-Dateien (max. Kantenlänge 288 px) unter **`data/thumbnails/`** (bzw. `$FAL_DATA_DIR/thumbnails`), ausgeliefert über **GET `/api/recent-thumbnails/:requestId`**.
 - **fal.ai Verbrauch**: Anzeige des 24h-Verbrauchs in USD (wenn der API-Key entsprechende Rechte hat).
-- **Passwortschutz**: Ein globales Passwort (`APP_PASSWORD`); nach Login Session per Cookie (bis zu 30 Tage).
+- **Passwortschutz**: Globales Passwort (`APP_PASSWORD`); nach Login Session per Cookie (bis zu 30 Tage).
 
 ---
 
 ## Verwendete Modelle (fal.ai)
 
-Alle Aufrufe laufen über die fal.ai-API; die App nutzt folgende Endpoints (Auswahl im UI unter „Modell“).
+Alle Aufrufe laufen über die fal.ai-API; die App nutzt folgende Endpoints (Auswahl im UI unter „Modell“). Ältere Varianten (Flux 2, FLUX.1 Kontext, GPT Image 1.x/2, Nano Banana 2.0, Grok Imagine v1) sind entfernt.
 
 | Modell (UI) | fal.ai Endpoint | Typ | Kurzbeschreibung |
 |-------------|-----------------|-----|-------------------|
-| Nano Banana Pro (Edit) | `fal-ai/nano-banana-pro/edit` | Edit | Bild-zu-Bild mit 1–3 Bildern |
+| Nano Banana Pro (Edit) | `fal-ai/nano-banana-pro/edit` | Edit | Gemini 3 Pro Image, 1–3 Bilder |
 | Nano Banana Pro (Text-zu-Bild) | `fal-ai/nano-banana-pro` | Text-zu-Bild | |
-| Nano Banana 2 (Edit) | `fal-ai/nano-banana-2/edit` | Edit | Bild-zu-Bild mit 1–3 Bildern (u. a. bis 14 Referenzbilder möglich) |
-| Nano Banana 2 (Text-zu-Bild) | `fal-ai/nano-banana-2` | Text-zu-Bild | |
-| Flux 2 Turbo (Edit) | `fal-ai/flux-2/turbo/edit` | Edit | |
-| Flux 2 Pro (Edit) | `fal-ai/flux-2-pro/edit` | Edit | |
-| FLUX.1 Kontext [pro] (Edit) | `fal-ai/flux-pro/kontext` | Edit (1 Bild) | Image-to-Image |
-| Flux 2 [dev] (Text-zu-Bild) | `fal-ai/flux-2` | Text-zu-Bild | |
-| Flux 2 Pro (Text-zu-Bild) | `fal-ai/flux-2-pro` | Text-zu-Bild | |
-| GPT-Image 1.5 (Edit) | `fal-ai/gpt-image-1.5/edit` | Edit | |
-| GPT-Image 1 Mini (Text-zu-Bild) | `fal-ai/gpt-image-1-mini` | Text-zu-Bild | |
-| GPT-Image 2 (Edit) | `fal-ai/gpt-image-2/edit` | Edit | |
-| GPT-Image 2 (Text-zu-Bild) | `fal-ai/gpt-image-2` | Text-zu-Bild | |
-| Grok Imagine Image (Edit) | `xai/grok-imagine-image/edit` | Edit (1 Bild) | xAI |
-| Grok Imagine Image (Text-zu-Bild) | `xai/grok-imagine-image` | Text-zu-Bild | xAI |
-| Objekt/Background entfernen | `fal-ai/object-removal` | Spezial | 1 Bild, optionaler Prompt (z. B. „Hintergrund“) |
+| Nano Banana 2.1 (Edit) | `google/nano-banana-2.1/edit` | Edit | Flash-Tier, API bis 14 Refs (UI: 1–3) |
+| Nano Banana 2.1 (Text-zu-Bild) | `google/nano-banana-2.1` | Text-zu-Bild | u. a. Web-Search, Thinking |
+| FLUX 3 (Edit) | `blackforestlabs/flux-3/edit-image` | Edit | API bis 10 Refs (UI: 1–3) |
+| FLUX 3 (Text-zu-Bild) | `blackforestlabs/flux-3/text-to-image` | Text-zu-Bild | native 2K/4K |
+| GPT Image 2.5 Sunburst (Edit) | `openai/gpt-image-2.5/sunburst/edit` | Edit | API bis 16 Refs (UI: 1–3) |
+| GPT Image 2.5 Sunburst (Text-zu-Bild) | `openai/gpt-image-2.5/sunburst/text-to-image` | Text-zu-Bild | Quality/Size-Parameter |
+| Grok Imagine 2.0 (Edit) | `xai/grok-imagine-image/v2.0/edit` | Edit | API bis 5 Refs (UI: 1–3), xAI |
+| Grok Imagine 2.0 (Text-zu-Bild) | `xai/grok-imagine-image/v2.0/text-to-image` | Text-zu-Bild | Auflösung bis 2K |
+| Objekt/Background entfernen | `fal-ai/object-removal` | Spezial | 1 Bild, optionaler Prompt |
 | Historische Fotos restaurieren | `fal-ai/image-editing/photo-restoration` | Spezial | 1 Bild, kein Prompt |
 
-Beim **Sync** mit fal.ai werden alle konfigurierten Endpoints inkl. **`fal-ai/flux-lora`** abgefragt und mit der Datei gemerged (max. 9 Einträge nach Zeitstempel).
+Beim **Sync** mit fal.ai werden alle konfigurierten Endpoints abgefragt und mit `recent-requests.json` gemerged (max. 9 Einträge nach Zeitstempel).
 
 ---
 
@@ -69,6 +66,9 @@ Beim **Sync** mit fal.ai werden alle konfigurierten Endpoints inkl. **`fal-ai/fl
 
 - **Laufzeit**: Node.js **24** (LTS), siehe `engines` in `package.json`.
 - **Server**: Express (ESM), statische Dateien aus `public/`, Cookie-basierte Session, Proxy für Download und fal.ai-Aufrufe.
+- **CSS**: Tailwind CSS **v4.3** – Quelle `src/styles.css`, Build nach `public/styles.css` (`@tailwindcss/cli`).
+- **Frontend**: Vanilla JS (kein Bundler); CSS-Build ist der einzige Frontend-Build-Schritt.
+- **Deploy**: Docker Compose auf Remote-Hosts über `./deploy.sh`.
 
 ### Abhängigkeiten (production)
 
@@ -76,17 +76,31 @@ Beim **Sync** mit fal.ai werden alle konfigurierten Endpoints inkl. **`fal-ai/fl
 |-------|------------------------|--------|
 | **@fal-ai/client** | ^1.10.1 | Offizieller fal.ai JavaScript-Client; `fal.subscribe()` für synchrone Modell-Aufrufe. |
 | **cookie-parser** | ^1.4.7 | Middleware zum Auslesen von Cookies (Session-Token). |
-| **dotenv** | ^17.4.2 | Lädt Umgebungsvariablen aus `.env`. |
-| **express** | ^5.2.1 | Web-Framework, Routen, Middleware, statische Dateien. |
-| **multer** | ^2.1.1 | Multipart-Upload (Bilder); Version 2 nutzt Streams, in der App werden Streams in Buffer gelesen für data-URLs an fal.ai. |
-| **sharp** | ^0.34.5 | Skaliert Ergebnisbilder zu WebP-Thumbnails für das 3×3-Raster (lokal persistent). |
+| **dotenv** | ^18.0.9 | Lädt Umgebungsvariablen aus `.env`. |
+| **express** | ^5.3.0 | Web-Framework, Routen, Middleware, statische Dateien. |
+| **multer** | ^2.5.0 | Multipart-Upload (Bilder); Streams werden in Buffer gelesen für data-URLs an fal.ai. |
+| **sharp** | ^0.35.5 | Skaliert Ergebnisbilder zu WebP-Thumbnails für das 3×3-Raster (lokal persistent). |
 
-Frontend: Vanilla JS, kein Build-Step.
+### Dev-Abhängigkeiten
+
+| Paket | Version | Zweck |
+|-------|---------|--------|
+| **tailwindcss** | ^4.3.3 | Utility-CSS und Theme (`@theme`, `@layer`). |
+| **@tailwindcss/cli** | ^4.3.3 | CLI-Build: `src/styles.css` → `public/styles.css`. |
+
+### npm-Scripts
+
+| Script | Beschreibung |
+|--------|--------------|
+| `npm run build:css` | Einmaliger Tailwind-Build. |
+| `npm run dev:css` | Tailwind im Watch-Modus. |
+| `npm run dev` | CSS bauen und Server mit `NODE_ENV=development` starten. |
+| `npm start` | Server starten (`node server.js`; CSS muss zuvor gebaut sein bzw. kommt aus dem Docker-Build). |
 
 ### Node- und npm-Versionen
 
 - **Node**: `>=24.0.0` (in `package.json` unter `engines.node`).
-- **npm**: Im Docker-Build wird global `npm@11.16.0` installiert; Abhängigkeiten via `npm ci`.
+- **npm**: Im Docker-Build wird global `npm@11.21.1` installiert; `npm ci`, CSS-Build, danach `npm prune --omit=dev`.
 
 ---
 
@@ -94,32 +108,38 @@ Frontend: Vanilla JS, kein Build-Step.
 
 ```
 falai/
-├── server.js           # Express-Server: Auth, /api/edit, /api/generate, /api/download, /api/recent-requests, /api/recent-thumbnails, /api/prompt-history, /api/fal-balance, statische Dateien
-├── package.json        # name, scripts, engines, dependencies
-├── Dockerfile          # node:24-alpine, npm@11, production install, CMD npm start
-├── docker-compose.yml  # Service „web“, Port 3321, FAL_KEY + APP_PASSWORD
+├── server.js            # Express: Auth, Edit/Generate, Recent-Requests, Prompt-Historie, Downloads, …
+├── package.json         # Scripts, engines, dependencies
+├── package-lock.json
+├── Dockerfile           # node:24-alpine, npm ci, CSS-Build, prune, CMD node server.js
+├── docker-compose.yml   # Service „web“, Port 3321, Volume ./data, FAL_KEY / APP_PASSWORD
+├── .dockerignore        # u. a. node_modules, data, .env, .git
+├── deploy.sh            # Remote-Deploy: rsync + docker compose up -d --build
 ├── README.md
-├── data/               # Docker: ./data → /app/data; prompt-history.json, recent-requests.json, recent-uploads.json (gitignored); thumbnails/*.webp, recent-uploads-thumbs/*.webp (gitignored)
+├── src/
+│   └── styles.css       # Tailwind-v4-Quelle (@import, @theme, Komponenten)
+├── data/                # Persistente App-Daten (Docker-Bind-Mount; Inhalt gitignored)
 │   ├── .gitkeep
 │   └── thumbnails/.gitkeep
 └── public/
-    ├── index.html      # SPA: Login, Editor (Modell, Prompt, Upload, Selfie, Optionen), Ergebnis, 3×3-Raster
-    ├── app.js          # Frontend-Logik: Auth, Formular, Upload-Preview, Selfie-Modal, Ergebnis-Anzeige, Raster, Prompt-Historie
-    ├── styles.css      # Layout, Komponenten, Raster, Selfie-Modal
+    ├── index.html       # SPA: Login, Editor, Ergebnis, 3×3-Raster
+    ├── app.js           # Frontend-Logik
+    └── styles.css       # Gebautes CSS (Ausgabe von build:css)
 ```
 
 ---
 
 ## Voraussetzungen
 
-- **Node.js 24** (LTS) oder Docker mit Image `node:24-alpine`.
+- **Node.js 24** (LTS) für lokalen Start **oder** Docker / Docker Compose für Build und Betrieb.
+- Für Remote-Deploy: SSH-Zugang zum Zielhost, `rsync` lokal, Docker Compose auf dem Host.
 - Ein gültiger **fal.ai API-Key** ([fal.ai Dashboard](https://fal.ai/dashboard)); für „Letzte Requests“ und optional „fal.ai Verbrauch“ wird die fal.ai Platform-API genutzt (gleicher Key).
 
 ---
 
 ## Konfiguration
 
-Umgebungsvariablen (lokal oder in Docker/docker-compose):
+Umgebungsvariablen (lokal oder in Docker/docker-compose über `.env`):
 
 | Variable | Pflicht | Beschreibung |
 |----------|--------|--------------|
@@ -127,9 +147,14 @@ Umgebungsvariablen (lokal oder in Docker/docker-compose):
 | **APP_PASSWORD** | Nein | Passwort für den Login; Standard: `changeme`. |
 | **PORT** | Nein | Port des Servers; Standard: `3321`. |
 | **NODE_ENV** | Nein | z. B. `production` (Docker). |
-| **FAL_DATA_DIR** | Nein | Verzeichnis für `prompt-history.json`, `recent-requests.json`, `recent-uploads.json` sowie die Ordner **`thumbnails/`**, **`recent-uploads/`** und **`recent-uploads-thumbs/`** (Docker: z. B. `/app/data` bei Volume `./data:/app/data`). Standard: `data/` neben `server.js`. |
+| **FAL_DATA_DIR** | Nein | Verzeichnis für Prompt-Historie, Recent-Requests, Uploads, Sets, Slot-State sowie **`thumbnails/`** u. a. (Docker: `/app/data` bei Volume `./data:/app/data`). Standard: `data/` neben `server.js`. |
 
-Optional: `.env` im Projektroot mit `FAL_KEY=…` und `APP_PASSWORD=…`; wird von `dotenv` geladen.
+Beispiel `.env` im Projektroot:
+
+```bash
+FAL_KEY=dein-fal-ai-api-key
+APP_PASSWORD=dein-passwort
+```
 
 ---
 
@@ -143,11 +168,11 @@ export FAL_KEY="dein-fal-ai-api-key"
 export APP_PASSWORD="dein-passwort"   # optional, Standard: changeme
 
 npm install
+npm run build:css
 npm start
 ```
 
-- **Entwicklung** (ohne NODE_ENV=production):  
-  `npm run dev` (setzt `NODE_ENV=development`).
+- **Entwicklung**: `npm run dev` (baut CSS und startet mit `NODE_ENV=development`). CSS-Watch parallel: `npm run dev:css`.
 
 Die App ist unter **http://localhost:3321** erreichbar (oder unter dem gewählten `PORT`).
 
@@ -168,16 +193,58 @@ docker run -p 3321:3321 \
   falai-webapp
 ```
 
-Der Ordner **`./data` auf dem Host** (gebunden nach `/app/data`) enthält u. a. `prompt-history.json`, `recent-requests.json`, `recent-uploads.json` sowie **`thumbnails/*.webp`**, **`recent-uploads/*`** und **`recent-uploads-thumbs/*.webp`** und bleibt über Container-Neustarts und Rebuilds erhalten. Ohne Volume und ohne `FAL_DATA_DIR` auf dauerhaftem Speicher gehen diese Daten bei einem neuen Container verloren.
+Der Ordner **`./data` auf dem Host** (gebunden nach `/app/data`) enthält Persistenzdaten (Prompt-Historie, Recent-Requests, Uploads, Thumbnails, Sets, Slots) und bleibt über Container-Neustarts und Rebuilds erhalten.
 
-### Docker Compose
+### Docker Compose (lokal)
 
 ```bash
 # .env im Projektroot mit FAL_KEY und optional APP_PASSWORD
-docker compose up -d
+docker compose up -d --build
 ```
 
-In `docker-compose.yml`: Service `web`, Port `3321`, **`./data:/app/data`** (Bind-Mount im Projektordner) und **`FAL_DATA_DIR=/app/data`**, damit `prompt-history.json` auf dem Host liegt und nach Neustart/Rebuild erhalten bleibt. **Hinweis:** `docker compose down -v` entfernt nur benannte Volumes – bei Bind-Mount `./data` bleibt der Ordner auf der Platte. Wechselt der Compose-Projektname (`COMPOSE_PROJECT_NAME`) bei benannten Volumes, wirkt eine „leere“ Historie oft wie Datenverlust (neues Volume).
+In `docker-compose.yml`: Service `web`, Port `3321`, Bind-Mount **`./data:/app/data`**, **`FAL_DATA_DIR=/app/data`**.  
+**Hinweis:** `docker compose down -v` entfernt nur benannte Volumes – bei Bind-Mount `./data` bleibt der Ordner auf der Platte.
+
+---
+
+## Remote-Deployment (Docker Compose)
+
+Produktiv-Deployment erfolgt über **`./deploy.sh`**: App-Dateien werden per `rsync` auf den Host kopiert, das Compose-Projekt dort gebaut und gestartet. **`data/` wird nicht überschrieben**; eine bereits vorhandene Remote-`.env` bleibt unangetastet.
+
+### Voraussetzungen auf dem Client
+
+- `ssh`, `rsync`
+- Ausführbares Skript: `chmod +x deploy.sh` (falls nötig)
+- Lokal eine `.env` mit `FAL_KEY`, **oder** bereits eine `.env` auf dem Remote-Host
+
+### Voraussetzungen auf dem Host
+
+- Docker mit Plugin **`docker compose`** (oder `docker-compose`)
+- Absolutes Deploy-Verzeichnis (z. B. `/opt/falai`)
+
+### Aufruf
+
+```bash
+./deploy.sh user@host /opt/falai
+```
+
+Beispiel:
+
+```bash
+./deploy.sh deploy@example.com /opt/falai
+```
+
+### Was das Skript macht
+
+1. Legt das Deploy-Verzeichnis auf dem Host an.
+2. Synchronisiert den App-Tree per `rsync --delete` **ohne** `node_modules/`, `.git/`, `data/`, `.env`.
+3. Stellt leere `data/`-Unterordner nur her, falls sie fehlen (bestehende Dateien bleiben).
+4. Kopiert die lokale `.env` **nur**, wenn remote noch keine existiert.
+5. Führt remote aus: `docker compose up -d --build` (Fallback: `docker-compose`).
+
+Die App lauscht danach auf Port **3321**; Persistenz liegt weiterhin unter `<deploy-verzeichnis>/data`.
+
+Hilfe: `./deploy.sh --help`
 
 ---
 
@@ -189,18 +256,18 @@ Alle API-Routen (außer Login) erfordern eine gültige Session (Cookie nach Logi
 |--------|------|--------------|
 | POST | `/api/login` | Login mit `password`; setzt Session-Cookie. |
 | GET | `/api/me` | Prüft, ob Session gültig ist. |
-| GET | `/api/prompt-history` | Liefert die serverseitige Prompt-Historie: `{ items: [ { text, timestamp }, … ] }` (max. 25). |
-| POST | `/api/prompt-history` | Speichert einen neuen Prompt (Body: `{ text: "…" }`), sofern derselbe Text noch nicht in der Historie steht; sonst unveränderte Liste ohne erneutes Schreiben. |
+| GET | `/api/prompt-history` | Serverseitige Prompt-Historie: `{ items: [ { text, timestamp }, … ] }` (max. 25). |
+| POST | `/api/prompt-history` | Speichert einen neuen Prompt (Body: `{ text: "…" }`), sofern derselbe Text noch nicht existiert. |
 | GET | `/api/fal-balance` | fal.ai 24h-Verbrauch in USD (wenn Key berechtigt). |
-| GET | `/api/recent-requests` | Letzte 9 Einträge aus `recent-requests.json` (chronologisch, alle Modelle); Antwort: `[{ request_id, endpoint_id, image_url, thumb_url, prompt? }]`. `thumb_url` zeigt auf **`/api/recent-thumbnails/…`** (URL-kodierte `request_id`). |
-| GET | `/api/recent-thumbnails/:requestId` | Liefert die gespeicherte WebP-Vorschau (404, wenn noch nicht vorhanden); `Cache-Control: public, max-age=604800`. `requestId` ist URL-kodiert. |
-| GET | `/api/recent-uploaded-images` | Liefert die letzten 3 gespeicherten Uploads: `[{ id, timestamp, image_url, thumb_url }]`. |
-| POST | `/api/recent-uploaded-images` | Speichert ein hochgeladenes Bild persistent (FormData-Feld: `image`), erzeugt Miniatur und liefert aktualisierte Liste zurück. |
-| GET | `/api/recent-uploaded-images/:id` | Liefert das gespeicherte Originalbild zur erneuten Verwendung im Upload-Slot. |
-| GET | `/api/recent-uploaded-images/:id/thumb` | Liefert die gespeicherte WebP-Miniatur für die Upload-Historie. |
-| POST | `/api/recent-requests/sync` | Liest Datei, holt Historie von fal.ai (alle Endpoints inkl. `fal-ai/flux-lora`, 7 Tage), merged nach Zeitstempel, speichert zurück, **aktualisiert Thumbnails** und entfernt veraltete Dateien unter `thumbnails/`, liefert die aktuelle Liste. |
-| POST | `/api/edit` | Bild-zu-Bild: `multipart/form-data` (images, prompt, modelKey, …); ruft fal.ai Edit-Endpoints auf. |
-| POST | `/api/generate` | Text-zu-Bild: JSON (prompt, modelKey, aspectRatio, numImages, …). |
+| GET | `/api/recent-requests` | Letzte 9 Einträge aus `recent-requests.json`; Antwort inkl. `thumb_url` → `/api/recent-thumbnails/…`. |
+| GET | `/api/recent-thumbnails/:requestId` | Gespeicherte WebP-Vorschau; `Cache-Control: public, max-age=604800`. |
+| GET | `/api/recent-uploaded-images` | Letzte 3 gespeicherte Uploads. |
+| POST | `/api/recent-uploaded-images` | Speichert ein Upload-Bild (FormData-Feld `image`) inkl. Miniatur. |
+| GET | `/api/recent-uploaded-images/:id` | Originalbild für erneute Slot-Nutzung. |
+| GET | `/api/recent-uploaded-images/:id/thumb` | WebP-Miniatur der Upload-Historie. |
+| POST | `/api/recent-requests/sync` | Merged lokale Datei mit fal.ai-Historie (alle konfigurierten Endpoints, 7 Tage), aktualisiert Thumbnails. |
+| POST | `/api/edit` | Bild-zu-Bild: `multipart/form-data` (`images`, `prompt`, `modelKey`, …). |
+| POST | `/api/generate` | Text-zu-Bild: JSON (`prompt`, `modelKey`, `aspectRatio`, `numImages`, …). |
 | GET | `/api/download?url=…&filename=…` | Proxy-Download; erlaubte Hosts: `*.fal.media`, `fal.media`, `storage.googleapis.com`. |
 
 Statische Dateien werden aus `public/` ausgeliefert; unbekannte GET-Pfade liefern `index.html` (SPA-Fallback).

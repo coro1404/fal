@@ -878,19 +878,14 @@ function setupPromptSets() {
 const MODEL_LABELS = {
   "nano-banana-edit": "Nano Banana Pro (Edit)",
   "nano-banana-t2i": "Nano Banana Pro (Text-zu-Bild)",
-  "nano-banana-2-edit": "Nano Banana 2 (Edit)",
-  "nano-banana-2-t2i": "Nano Banana 2 (Text-zu-Bild)",
-  "flux2-edit": "Flux 2 Turbo (Edit)",
-  "flux2-pro-edit": "Flux 2 Pro (Edit)",
-  "flux-pro-kontext": "FLUX.1 Kontext [pro] (Edit)",
-  "flux2-dev-t2i": "Flux 2 [dev] (Text-zu-Bild)",
-  "flux2-pro-t2i": "Flux 2 Pro (Text-zu-Bild)",
-  "gpt-image-edit": "GPT-Image 1.5 (Edit)",
-  "gpt-image-mini": "GPT-Image 1 Mini (Text-zu-Bild)",
-  "gpt-image-2-edit": "GPT-Image 2 (Edit)",
-  "gpt-image-2-t2i": "GPT-Image 2 (Text-zu-Bild)",
-  "grok-imagine-edit": "Grok Imagine Image (Edit)",
-  "grok-imagine-t2i": "Grok Imagine Image (Text-zu-Bild)",
+  "nano-banana-2-edit": "Nano Banana 2.1 (Edit)",
+  "nano-banana-2-t2i": "Nano Banana 2.1 (Text-zu-Bild)",
+  "flux3-edit": "FLUX 3 (Edit)",
+  "flux3-t2i": "FLUX 3 (Text-zu-Bild)",
+  "gpt-image-edit": "GPT Image 2.5 Sunburst (Edit)",
+  "gpt-image-t2i": "GPT Image 2.5 Sunburst (Text-zu-Bild)",
+  "grok-imagine-edit": "Grok Imagine 2.0 (Edit)",
+  "grok-imagine-t2i": "Grok Imagine 2.0 (Text-zu-Bild)",
   "remove-bg": "Object Removal / Background entfernen",
   "restore-photo": "Photo Restoration (historische Fotos)",
 };
@@ -990,10 +985,8 @@ function isTextToImageModel(modelKey) {
   return (
     modelKey === "nano-banana-t2i" ||
     modelKey === "nano-banana-2-t2i" ||
-    modelKey === "gpt-image-mini" ||
-    modelKey === "gpt-image-2-t2i" ||
-    modelKey === "flux2-dev-t2i" ||
-    modelKey === "flux2-pro-t2i" ||
+    modelKey === "flux3-t2i" ||
+    modelKey === "gpt-image-t2i" ||
     modelKey === "grok-imagine-t2i"
   );
 }
@@ -1002,6 +995,9 @@ function getEditModelImageLimit(modelKey) {
   switch (modelKey) {
     case "nano-banana-edit":
     case "nano-banana-2-edit":
+    case "flux3-edit":
+    case "gpt-image-edit":
+    case "grok-imagine-edit":
       return 3;
     default:
       return 1;
